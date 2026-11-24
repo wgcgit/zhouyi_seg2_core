@@ -1,12 +1,17 @@
 {
   "case": { "gender": "男", "pillars": { "year": "戊辰", "month": "己未", "day": "乙亥", "hour": "乙酉" } },
   "monthCommand": { "monthBranch": "未", "dayMaster": "乙木", "seasonClimate": "季夏燥土", "verdict": "财星当令，财多身难独担" },
-  "pattern": { "type": "财格", "verdict": "成格", "storeHouse": "辰为水库，未为燥土财库，双库夹局", "reasoning": "财库厚而闭" },
+  "pattern": { "type": "财格", "verdict": "破格", "storeHouse": "辰为水库，未为燥土财库，双库夹局", "reasoning": "财星被双乙比劫夺财（用神被克），且财多身难独担、财库厚而闭" },
   "tiaoHou": { "climateType": "燥热局", "primaryDrug": "癸水", "secondaryDrug": "丙火", "drugStatus": "藏药", "drugReasoning": "亥藏壬水有润根，戊己厚土克水", "gap": "原局无丙透，缺阳光泄秀通关" },
   "xiJi": { "xi": ["水（印）", "木（比劫）"], "ciXi": ["丙火"], "ji": ["叠土", "叠金"] },
   "boundaries": [{ "element": "土金赛道", "why": "财重压身、杀重克身", "condition": "须有水木通关，方可轻碰" }],
-  "playbooks": [{ "scale": "轻创业", "condition": "水印流通之年", "actions": ["咨询工作室", "独立方案团队"] }],
-  "timeline": [{ "ganZhi": "亥子", "type": "水运", "verdict": "重仓", "mainTrack": "深耕专业、铺底盘", "playbook": "早期", "liunianWindows": [{ "year": 2030, "signal": "透出调候用神", "action": "宜" }] }],
+  "playbooks": [
+    { "scale": "早期", "condition": "财埋印、杀在后，宜借平台养印", "actions": ["优先平台与专业岗", "进大企业、规划院、设计或工程基建体系", "攒证书、人脉、报批确权套路"] },
+    { "scale": "轻创业", "condition": "水印流通之年可以启动，门槛低、风险可控", "actions": ["咨询工作室", "独立方案团队", "技术顾问"] },
+    { "scale": "重资产", "condition": "必须是「水印扶身、冲开财库、丙火通关」的大运流年窗口", "actions": ["厚积薄发，不是少年创业命", "等窗口期再开长线盘"] },
+    { "scale": "合伙", "condition": "双乙比劫，有同气帮扶，但财库重、容易争利确权纠纷", "actions": ["先定规则", "锁产权", "留风控"] }
+  ],
+  "timeline": [{ "ganZhi": "癸亥", "type": "水运", "verdict": "重仓", "mainTrack": "深耕专业、铺底盘", "playbook": "早期", "liunianWindows": [{ "year": 2033, "signal": "透出调候用神", "action": "宜" }] }],
   "transition": { "risk": "藤萝根基未稳，见财心动、盲目重仓", "advice": "交运前后一两年不新开长线重资产盘" },
   "summary": { "strategy": "底盘待机", "notes": ["喜水木，忌叠土叠金"] }
 }

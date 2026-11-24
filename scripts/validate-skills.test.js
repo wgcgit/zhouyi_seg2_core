@@ -453,9 +453,9 @@ const CANONICAL_SAMPLE = {
   },
   "pattern": {
     "type": "财格",
-    "verdict": "成格",
+    "verdict": "破格",
     "storeHouse": "辰为水库，未为燥土财库，双库夹局",
-    "reasoning": "财库厚而闭"
+    "reasoning": "财星被双乙比劫夺财（用神被克），且财多身难独担、财库厚而闭"
   },
   "tiaoHou": {
     "climateType": "燥热局",
@@ -487,24 +487,51 @@ const CANONICAL_SAMPLE = {
   ],
   "playbooks": [
     {
+      "scale": "早期",
+      "condition": "财埋印、杀在后，宜借平台养印",
+      "actions": [
+        "优先平台与专业岗",
+        "进大企业、规划院、设计或工程基建体系",
+        "攒证书、人脉、报批确权套路"
+      ]
+    },
+    {
       "scale": "轻创业",
-      "condition": "水印流通之年",
+      "condition": "水印流通之年可以启动，门槛低、风险可控",
       "actions": [
         "咨询工作室",
-        "独立方案团队"
+        "独立方案团队",
+        "技术顾问"
+      ]
+    },
+    {
+      "scale": "重资产",
+      "condition": "必须是「水印扶身、冲开财库、丙火通关」的大运流年窗口",
+      "actions": [
+        "厚积薄发，不是少年创业命",
+        "等窗口期再开长线盘"
+      ]
+    },
+    {
+      "scale": "合伙",
+      "condition": "双乙比劫，有同气帮扶，但财库重、容易争利确权纠纷",
+      "actions": [
+        "先定规则",
+        "锁产权",
+        "留风控"
       ]
     }
   ],
   "timeline": [
     {
-      "ganZhi": "亥子",
+      "ganZhi": "癸亥",
       "type": "水运",
       "verdict": "重仓",
       "mainTrack": "深耕专业、铺底盘",
       "playbook": "早期",
       "liunianWindows": [
         {
-          "year": 2030,
+          "year": 2033,
           "signal": "透出调候用神",
           "action": "宜"
         }
@@ -747,15 +774,25 @@ function withEnum(schema, pathParts, values) {
   return clone;
 }
 
-/** 按同样的路径写法改样例里的取值（'x[]' 表示取数组第一项） */
+/**
+ * 按同样的路径写法改样例里的取值（'x[]' 表示数组）。
+ * 数组的**每一项**都要改 —— 否则样例里会残留旧取值，
+ * 「样例本身仍要合法」那条断言就会误报（样例比契约多了一档/多了一行）。
+ */
 function setSampleValue(sample, pathParts, value) {
   const clone = JSON.parse(JSON.stringify(sample));
   const segs = pathParts.map((s) => (s.endsWith('[]') ? s.slice(0, -2) : s));
-  let node = clone;
-  for (let i = 0; i < segs.length - 1; i += 1) {
-    node = Array.isArray(node[segs[i]]) ? node[segs[i]][0] : node[segs[i]];
-  }
-  node[segs[segs.length - 1]] = value;
+  const apply = (node, idx) => {
+    const seg = segs[idx];
+    if (idx === segs.length - 1) {
+      node[seg] = value;
+      return;
+    }
+    const child = node[seg];
+    if (Array.isArray(child)) child.forEach((el) => apply(el, idx + 1));
+    else apply(child, idx + 1);
+  };
+  apply(clone, 0);
   return clone;
 }
 
@@ -2138,3 +2175,158 @@ test('N1 已知残留：叶子 type 由 integer 改成 string 仍然静默（完
   assert.deepStrictEqual(r.errors, [], r.errors.join('\n'));
 });
 
+// ===========================================================================
+// 第八轮（补丁轮）：Task 2 Step 5 —— 两条机器断言
+//
+// 契约里有两处**靠人手抄、靠人口头约定**的地方，不变成机器断言就必然漂移：
+//   ① `docs/CAREER_SCHEMA.md` 顶部「枚举速查」表 与 下方 ```json 块的 enum 是手抄的两份；
+//   ② 基准样例的 `playbooks[]` 必须覆盖「早期/轻创业/重资产/合伙」四档，
+//      且每个 `timeline[].playbook` 必须落在某个 `playbooks[].scale` 上。
+//
+// ⚠️ 这两条**只放在测试里**，绝不写进 `scripts/validate-skills.js` 的 `run()`：
+// 测试夹具 `makeCompliantRepo()` 造出来的 `docs/CAREER_SCHEMA.md` 是由 `schemaMd()` 生成的，
+// **它不含那张「枚举速查」表**；放进 `run()` 会让所有夹具用例集体报红。
+//
+// 两条都**直接读真实仓的文件**（不是夹具）；文件不存在时 `t.skip()` 而不是判红。
+// 解析全部自己写 —— 不调用 `scripts/validate-skills.js` / `scripts/lib/schema-check.js`
+// 里的任何实现（那是「用被测对象验证被测对象」，测不出抄错）。
+// ===========================================================================
+
+const REPO_ROOT = path.resolve(__dirname, '..');
+const CAREER_SCHEMA_MD = path.join(REPO_ROOT, 'docs', 'CAREER_SCHEMA.md');
+const CAREER_SCHEMA_SAMPLE = path.join(REPO_ROOT, 'docs', 'CAREER_SCHEMA.sample.json');
+
+/** 打法四档 —— 契约规定的闭合集合 */
+const EXPECTED_PLAYBOOK_SCALES = ['早期', '轻创业', '重资产', '合伙'];
+
+/**
+ * 从 `docs/CAREER_SCHEMA.md` 里抠出「枚举速查」表格。
+ * 返回 [{ path, values }]，path 用契约里的写法（如 `playbooks[].scale`）。
+ * 表格格式：`| \`字段路径\` | \`甲\` / \`乙\` |`
+ */
+function parseEnumQuickTable(mdText) {
+  const lines = mdText.split(/\r?\n/);
+  const rows = [];
+  // 只抠「## 枚举速查」那一节里的表格 —— md 里别处将来再加表格也不该被算进来
+  let inSection = false;
+  for (const line of lines) {
+    const heading = line.match(/^#{1,6}\s*(.*)$/);
+    if (heading) {
+      inSection = heading[1].includes('枚举速查');
+      continue;
+    }
+    if (!inSection) continue;
+    if (!line.startsWith('|')) continue;
+    const cells = line.split('|').slice(1, -1);
+    if (cells.length !== 2) continue;
+    const rawPath = cells[0].trim();
+    if (!rawPath.startsWith('`')) continue; // 表头 / 分隔行
+    const path = rawPath.replace(/`/g, '').trim();
+    const values = cells[1]
+      .split('/')
+      .map((v) => v.replace(/`/g, '').trim())
+      .filter((v) => v.length > 0);
+    if (path.length === 0 || values.length === 0) continue;
+    rows.push({ path, values });
+  }
+  return rows;
+}
+
+/** 从 md 里抠出 ```json 块并解析 */
+function parseContractJsonBlock(mdText) {
+  const m = mdText.match(/```json[ \t]*\r?\n([\s\S]*?)\r?\n```/);
+  if (!m) return null;
+  try {
+    return JSON.parse(m[1]);
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * 按契约路径写法（如 `timeline[].liunianWindows[].action`）在 schema 里定位节点。
+ * `x[]` 表示取数组的 items。找不到返回 null。
+ */
+function resolveSchemaNode(schema, pathStr) {
+  let node = schema;
+  for (const seg of pathStr.split('.')) {
+    if (!node || typeof node !== 'object') return null;
+    const isArraySeg = seg.endsWith('[]');
+    const key = isArraySeg ? seg.slice(0, -2) : seg;
+    if (!node.properties || !(key in node.properties)) return null;
+    node = node.properties[key];
+    if (isArraySeg) {
+      if (!node || !node.items) return null;
+      node = node.items;
+    }
+  }
+  return node;
+}
+
+/** 列出 schema 里所有带 enum 的路径（契约写法） */
+function collectEnumPaths(schema) {
+  const out = [];
+  const walk = (node, prefix) => {
+    if (!node || typeof node !== 'object') return;
+    const props = node.properties;
+    if (!props || typeof props !== 'object') return;
+    for (const [key, sub] of Object.entries(props)) {
+      const childPath = prefix ? `${prefix}.${key}` : key;
+      if (sub && Array.isArray(sub.enum)) out.push({ path: childPath, values: sub.enum });
+      if (sub && sub.properties) walk(sub, childPath);
+      if (sub && sub.items && sub.items.properties) walk(sub.items, `${childPath}[]`);
+    }
+  };
+  walk(schema, '');
+  return out;
+}
+
+test('N3：契约 md 的「枚举速查」表与机读契约块的 enum 完全一致（自己解析比对）', (t) => {
+  if (!fs.existsSync(CAREER_SCHEMA_MD)) { t.skip('真实仓没有 docs/CAREER_SCHEMA.md'); return; }
+  const mdText = fs.readFileSync(CAREER_SCHEMA_MD, 'utf8');
+  const schema = parseContractJsonBlock(mdText);
+  if (!schema) { t.skip('docs/CAREER_SCHEMA.md 里抠不出机读契约 json 块'); return; }
+
+  const rows = parseEnumQuickTable(mdText);
+  assert.ok(rows.length > 0, '「枚举速查」表里一行都没抠出来 —— 表格被删了或格式变了');
+
+  // ① 表里每一行的取值 == json 块里对应路径的 enum
+  for (const row of rows) {
+    const node = resolveSchemaNode(schema, row.path);
+    assert.ok(node, `表里的路径 ${row.path} 在机读契约块里找不到对应节点`);
+    assert.ok(Array.isArray(node.enum), `${row.path} 在机读契约块里没有 enum`);
+    assert.deepStrictEqual(
+      row.values.slice().sort(),
+      node.enum.slice().sort(),
+      `${row.path} 的取值与机读契约块里的 enum 不一致`,
+    );
+  }
+
+  // ② 反向：json 块里的每一个 enum 都必须在表里出现（防「只删表不改块」）
+  const tablePaths = new Set(rows.map((r) => r.path));
+  for (const e of collectEnumPaths(schema)) {
+    assert.ok(tablePaths.has(e.path), `机读契约块里的 ${e.path} 没出现在「枚举速查」表里`);
+  }
+});
+
+test('N3：基准样例的打法四档齐全，且 timeline[].playbook 引用闭合（自己解析比对）', (t) => {
+  if (!fs.existsSync(CAREER_SCHEMA_SAMPLE)) { t.skip('真实仓没有 docs/CAREER_SCHEMA.sample.json'); return; }
+  const sample = JSON.parse(fs.readFileSync(CAREER_SCHEMA_SAMPLE, 'utf8'));
+
+  assert.ok(Array.isArray(sample.playbooks), '样例没有 playbooks 数组');
+  const scales = sample.playbooks.map((p) => p.scale);
+  assert.deepStrictEqual(
+    scales.slice().sort(),
+    EXPECTED_PLAYBOOK_SCALES.slice().sort(),
+    '样例的 playbooks[].scale 没恰好覆盖「早期/轻创业/重资产/合伙」四档',
+  );
+
+  const scaleSet = new Set(scales);
+  assert.ok(Array.isArray(sample.timeline), '样例没有 timeline 数组');
+  for (const [i, step] of sample.timeline.entries()) {
+    assert.ok(
+      scaleSet.has(step.playbook),
+      `timeline[${i}].playbook = ${JSON.stringify(step.playbook)} 不在 playbooks[].scale 里`,
+    );
+  }
+});
