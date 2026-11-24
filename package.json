@@ -1,0 +1,10 @@
+{
+  "name": "zhouyi-seg2-skills",
+  "version": "0.1.0",
+  "private": true,
+  "description": "八字事业择业 skill 知识库（zhouyi_seg2）",
+  "scripts": {
+    "test": "node --test scripts/lib/schema-check.test.js scripts/validate-skills.test.js && node scripts/validate-skills.js",
+    "validate": "node scripts/validate-skills.js"
+  }
+}
