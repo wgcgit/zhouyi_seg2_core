@@ -34,6 +34,15 @@
   契约 md 与校验器任一方写错都必须报错，不能靠「文档里写着」当约束。
   两处 `verdict` 的枚举**不可混用**：`pattern.verdict` ∈ {成格, 破格, 不清}，
   `timeline[].verdict` ∈ {重仓, 轻试, 守成}。
+- **契约里多数数组必须声明 `minItems >= 1`**：`xiJi.xi`、`xiJi.ji`、`boundaries`、`playbooks`、
+  `playbooks[].actions`、`timeline`、`timeline[].liunianWindows`、`summary.notes` 这 **8 个数组必须非空** ——
+  空数组等于「样例只覆盖了半边」（`playbooks: []`、`summary.notes: []` 都能蒙混过关）。
+  `scripts/validate-skills.js` 对这 8 条路径做常驻断言（契约有没有声明 `minItems`）。
+  **唯一豁免是 `xiJi.ciXi`（次喜 / 辅助用神）**：`参考资料/事业3.txt:78` 明确区分
+  「必须救的急药」与「锦上添花的辅药」—— 辅助用神本质可选，强行要求非空等于**逼模型编一个不存在的次喜**。
+  故 `xiJi.ciXi` 允许为空数组，且校验器额外断言它**不得**声明 `minItems >= 1`（防止日后被误加回去）。
+  对照：`xiJi.ji`（忌神）**必须非空** —— `参考资料/事业1.txt:56`「缺但为忌，补了反而压力大」
+  说明忌神是由喜用神关系**派生**出来的，不因该五行不在原局就消失，因此不存在「无忌神」的情形。
 - **提交信息用中文**，格式 `<type>: <简述>`，type 取 `feat` / `fix` / `docs` / `chore` / `test`。
 
 ## File Structure
@@ -731,6 +740,9 @@ git commit -m "test: 加校验工具链 —— skill 结构 / 契约 / 基线完
 - `pattern` —— 格局底盘：格局类型、成格还是破格、财库等核心结构、成败理由。
 - `tiaoHou` —— 调候：全局气候类型、主药（第一调候用神）、次药、药的真假状态、判断理由、还缺什么。
 - `xiJi` —— 喜忌：喜用五行、次喜五行、忌神五行。
+  其中 `xi`（喜用）与 `ji`（忌神）**必非空**（忌神由喜用关系派生，即使该五行不在原局仍是忌）；
+  `ciXi`（次喜 / 辅助用神）**允许为空数组** —— 它是「锦上添花的辅药」，本次命例若没有明显次喜就留空，
+  **不得为凑满而编一个次喜**。
 - `boundaries` —— **忌神赛道的边界**：某五行不是不能碰，而是缺了通关条件会怎样。每条三要素：五行、为什么、有条件时怎么碰。
 - `playbooks` —— **打法分档**：按体量分四档（早期借平台 / 轻创业 / 重资产操盘 / 合伙），每档给适用条件与具体动作。
 - `timeline` —— 大运时间表：每步大运的干支、五行类型、策略定性（重仓/轻试/守成）、主赛道、对应打法档位，以及该运内的流年窗口。
@@ -797,13 +809,14 @@ git commit -m "test: 加校验工具链 —— skill 结构 / 契约 / 基线完
       "type": "object",
       "required": ["xi", "ciXi", "ji"],
       "properties": {
-        "xi": { "type": "array", "items": { "type": "string" } },
+        "xi": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
         "ciXi": { "type": "array", "items": { "type": "string" } },
-        "ji": { "type": "array", "items": { "type": "string" } }
+        "ji": { "type": "array", "items": { "type": "string" }, "minItems": 1 }
       }
     },
     "boundaries": {
       "type": "array",
+      "minItems": 1,
       "items": {
         "type": "object",
         "required": ["element", "why", "condition"],
@@ -816,18 +829,20 @@ git commit -m "test: 加校验工具链 —— skill 结构 / 契约 / 基线完
     },
     "playbooks": {
       "type": "array",
+      "minItems": 1,
       "items": {
         "type": "object",
         "required": ["scale", "condition", "actions"],
         "properties": {
           "scale": { "type": "string", "enum": ["早期", "轻创业", "重资产", "合伙"] },
           "condition": { "type": "string" },
-          "actions": { "type": "array", "items": { "type": "string" } }
+          "actions": { "type": "array", "items": { "type": "string" }, "minItems": 1 }
         }
       }
     },
     "timeline": {
       "type": "array",
+      "minItems": 1,
       "items": {
         "type": "object",
         "required": ["ganZhi", "type", "verdict", "mainTrack", "playbook", "liunianWindows"],
@@ -839,6 +854,7 @@ git commit -m "test: 加校验工具链 —— skill 结构 / 契约 / 基线完
           "playbook": { "type": "string" },
           "liunianWindows": {
             "type": "array",
+            "minItems": 1,
             "items": {
               "type": "object",
               "required": ["year", "signal", "action"],
@@ -865,7 +881,7 @@ git commit -m "test: 加校验工具链 —— skill 结构 / 契约 / 基线完
       "required": ["strategy", "notes"],
       "properties": {
         "strategy": { "type": "string", "enum": ["主业重仓", "底盘待机", "守成缓投"] },
-        "notes": { "type": "array", "items": { "type": "string" } }
+        "notes": { "type": "array", "items": { "type": "string" }, "minItems": 1 }
       }
     }
   }
