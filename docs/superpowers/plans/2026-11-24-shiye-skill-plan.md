@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- **基线不可改动**：`skills/bazi-tuipan/` 下从 v2 拷贝来的 42 个文件必须逐字保持原样。其中 36 个是「技能定义文件」（19 个 skill 的 `SKILL.md` / `*.skill.md`），另外 6 个是顶层过程文档（`BOOK_OVERVIEW.md`、`DIGEST.md`、`GLOSSARY.md`、`INDEX.md`、`PIPELINE_STATE.md`、`verified.md`）——**这 6 个允许在 Task 9 追加/修改**，其余 36 个任何任务都不得触碰。
+- **基线不可改动**：`skills/bazi-tuipan/` 下从 v2 拷贝来的 42 个文件必须逐字保持原样。其中 36 个是「运行时知识库文件」（19 个 skill 的 `SKILL.md` / `*.skill.md` 定义文件 + 17 份 `test-prompts.json`），另外 6 个是顶层过程文档（`BOOK_OVERVIEW.md`、`DIGEST.md`、`GLOSSARY.md`、`INDEX.md`、`PIPELINE_STATE.md`、`verified.md`）——**这 6 个允许在 Task 9 追加/修改**，其余 36 个任何任务都不得触碰。
 - **判定基线一致必须比 git blob，不看工作区**：`core.autocrlf=true` 会把检出文件转成 CRLF，`diff -r` 会误报差异。用 `git hash-object`。
 - **运行时只加载 `Interpretation` 段**：`A2` / `Execution` 是流程指令，不进 system prompt。新 skill 的 `Interpretation` 段内不得出现「输出 JSON」「输出字段名」这类流程/格式指令。
 - **每个新 skill 必须有 `test-prompts.json`**：至少 4 条 `should_fire: true` + 至少 1 条 `should_fire: false`（此规则**只对新 skill 生效**，不作为全局 lint —— 基线的 `paipan-jichu` 是 3/3、`dizhi-banhe` 是 5/0，本来就不满足）。
@@ -2179,7 +2179,7 @@ git commit -m "docs(skills): 补 candidates 四份 —— 原则/框架/案例/�
 
 追加到 `skills/bazi-tuipan/INDEX.md` 末尾：
 
-```markdown
+````markdown
 ---
 
 ## 事业择业链（seg2 新增）
@@ -2217,7 +2217,7 @@ suiyun-shiye → `dayun-fenxi` + `xi-ji-quyong`。
 **输出契约**：`docs/CAREER_SCHEMA.md`（10 个顶层键，闭合枚举）。
 
 **校验**：`npm test`（结构 + 契约 + 基线完整性）。
-```
+````
 
 - [ ] **Step 2: 改 `PIPELINE_STATE.md`**
 
