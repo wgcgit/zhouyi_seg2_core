@@ -35,8 +35,26 @@ const MUTABLE_BASELINE = new Set([
 const MANIFEST_NAME = '.baseline-manifest.txt';
 const SKILL_DIR = path.join('skills', 'bazi-tuipan');
 
+/** git 里用的正斜杠路径（Windows 上 path.join 给的是反斜杠，git 不认） */
+function gitPath(p) {
+  return p.split(path.sep).join('/');
+}
+
 /** 基线文件数（Task 1 建基线时的既定事实）—— 清单被截断/写坏时用它把「静默通过」变成报错 */
 const BASELINE_FILE_COUNT = 42;
+
+/**
+ * 基线提交 —— 清单的信任锚。
+ * 清单自己也是工作区里的一个文件，只信它等于「清单说谁没变谁就没变」，
+ * 所以清单必须与这个提交里的树逐条比对（路径集合 + blob sha 集合双向相等）。
+ * 权威来源：docs/superpowers/plans/2026-11-24-shiye-skill-plan.md 的 Global Constraints，
+ * 以及 Task 9 / Task 10 引用的那个建仓提交 `chore: 建仓 —— 拷入 v2 推盘 skill 基线 + 事业择业设计规格`。
+ * 基线提交不可改（改了就换 SHA），短 SHA 够用（git ls-tree 接受）。
+ */
+const BASELINE_COMMIT = 'f7bd915';
+
+/** Task 8 的四份过程文档 */
+const CANDIDATE_FILES = ['principles.md', 'frameworks.md', 'cases.md', 'counter-examples.md'];
 
 /**
  * 事业推理契约的规范顶层键集 —— 权威来源：docs/superpowers/plans/2026-11-24-shiye-skill-plan.md
@@ -82,17 +100,50 @@ function readManifest(dir) {
 }
 
 /**
+ * 读基线提交里的文件树（路径 → blob sha）。
+ * 必须带 `-c core.quotepath=false`：否则 git 会把中文文件名转义成八进制，
+ * 路径就跟清单里的原文对不上。用 -z 做 NUL 分隔，避免引号转义。
+ * 提交不存在时返回 { error }（绝不静默跳过 —— 那等于把锚点关掉）。
+ */
+function readBaselineTree(root, commit) {
+  let out;
+  try {
+    out = execFileSync('git', [
+      '-c', 'core.quotepath=false', 'ls-tree', '-r', '-z', commit, '--', gitPath(SKILL_DIR),
+    ], { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  } catch (e) {
+    return { error: e };
+  }
+  const prefix = `${gitPath(SKILL_DIR)}/`;
+  const tree = new Map();
+  for (const rec of out.split('\0')) {
+    if (!rec) continue;
+    const m = /^(\d+) (\w+) ([0-9a-f]{40})\t(.*)$/.exec(rec);
+    if (!m || m[2] !== 'blob') continue;
+    let p = m[4];
+    if (p.startsWith(prefix)) p = p.slice(prefix.length);
+    tree.set(p, m[3]);
+  }
+  return { tree };
+}
+
+/**
  * 比对基线文件 blob，返回不一致清单。
  * 用 `git hash-object` 比 blob（会应用 clean filter 归一化 CRLF），不看工作区内容。
+ *
+ * 两条腿：
+ *   1. 锚定：清单必须与基线提交的树逐条一致（路径集合 + blob sha 集合双向相等）；
+ *   2. 工作区：清单里的每个文件都必须还在，且（不可变的那 36 个）blob 未变。
  */
-function baseline(root) {
+function baseline(root, opts = {}) {
   const dir = path.join(root, SKILL_DIR);
   const problems = [];
+  const commit = opts.baselineCommit || BASELINE_COMMIT;
 
   const manifestFile = path.join(dir, MANIFEST_NAME);
   if (!fs.existsSync(manifestFile)) {
     // 清单缺失/未提交 = 基线守卫静默失效，必须报红而不是一路绿灯
-    problems.push(`缺少基线清单 ${SKILL_DIR.split(path.sep).join('/')}/${MANIFEST_NAME}`);
+    problems.push(`缺少基线清单 ${gitPath(SKILL_DIR)}/${MANIFEST_NAME}`);
     return problems;
   }
 
@@ -110,6 +161,25 @@ function baseline(root) {
   for (const { file } of entries) {
     if (seen.has(file)) problems.push(`基线清单有重复条目: ${file}`);
     seen.add(file);
+  }
+
+  // 锚定：清单 vs 基线提交的树。清单自己也是工作区里的一个文件，
+  // 只信它等于「清单说谁没变谁就没变」—— 交换两个文件的内容再对调清单条目即可攻破。
+  const anchor = readBaselineTree(root, commit);
+  if (anchor.error) {
+    const detail = anchor.error.stderr ? String(anchor.error.stderr).trim().split('\n')[0] : anchor.error.message;
+    problems.push(`找不到基线提交 ${commit} —— 基线清单无法被锚定（${detail}）`);
+  } else {
+    const tree = anchor.tree;
+    const man = new Map(entries.map((e) => [e.file, e.sha]));
+    const onlyTree = [...tree.keys()].filter((p) => !man.has(p)).sort();
+    const onlyMan = [...man.keys()].filter((p) => !tree.has(p)).sort();
+    const shaDiff = [...man.keys()].filter((p) => tree.has(p) && tree.get(p) !== man.get(p)).sort();
+    for (const p of onlyTree) problems.push(`基线清单与基线提交 ${commit} 不一致：清单缺少 ${p}`);
+    for (const p of onlyMan) problems.push(`基线清单与基线提交 ${commit} 不一致：清单多出 ${p}`);
+    for (const p of shaDiff) {
+      problems.push(`基线清单与基线提交 ${commit} 不一致：${p} 的 blob sha 不符（清单 ${man.get(p).slice(0, 8)} ≠ 基线 ${tree.get(p).slice(0, 8)}）`);
+    }
   }
 
   // 存在性检查对全部条目都做（含那 6 个可变顶层文档）。
@@ -134,7 +204,7 @@ function baseline(root) {
     out = execFileSync('git', ['hash-object', '--stdin-paths'], {
       cwd: root,
       encoding: 'utf8',
-      input: toHash.map((e) => `${SKILL_DIR.split(path.sep).join('/')}/${e.file}`).join('\n') + '\n',
+      input: toHash.map((e) => `${gitPath(SKILL_DIR)}/${e.file}`).join('\n') + '\n',
     });
   } catch (e) {
     problems.push(`无法执行 git hash-object 比对基线 —— ${e.message}`);
@@ -265,15 +335,18 @@ function resolveSchemaNode(schema, pathParts) {
 
 /**
  * 契约自身的形状检查：required 必须是非空数组，required 与 properties 的键集合一致，
- * 顶层键集必须恰好是规范的 10 个键，8 组闭合枚举的取值必须与规范完全一致。
+ * 顶层键集必须恰好是规范的 10 个键（且顺序不可调换），8 组闭合枚举的取值必须与规范完全一致。
  * 否则「契约和总入口对不对得上」这条检查会退化成无错即过的空断言。
+ *
+ * 返回 { keySetOk }：键集不对时，枚举检查与 master 对齐检查都不该跑 ——
+ * 拿一个错的键集去核对别的，会报出一堆方向相反的噪音。
  */
 function checkSchemaShape(errors, schema) {
-  if (!schema) return false;
+  if (!schema) return { keySetOk: false };
   const required = Array.isArray(schema.required) ? schema.required : [];
   if (required.length === 0) {
     errors.push('契约 schema 缺少非空的 required 数组');
-    return false;
+    return { keySetOk: false };
   }
   const props = (schema.properties && typeof schema.properties === 'object') ? schema.properties : {};
   let ok = true;
@@ -293,8 +366,17 @@ function checkSchemaShape(errors, schema) {
   // 顶层键集必须恰好是规范的 10 个键（多一个少一个都算契约走样）
   const actualKeys = required.slice().sort();
   const wantedKeys = CONTRACT_TOP_LEVEL_KEYS.slice().sort();
-  if (JSON.stringify(actualKeys) !== JSON.stringify(wantedKeys)) {
+  const keySetOk = JSON.stringify(actualKeys) === JSON.stringify(wantedKeys);
+  if (!keySetOk) {
     errors.push(`契约 schema 顶层键集不对：应为 [${CONTRACT_TOP_LEVEL_KEYS.join(' / ')}]，实际 [${required.join(' / ')}]`);
+    ok = false;
+    // 键集不对 → 下面那些「某枚举在哪」的报错全是噪音，不再报
+    return { keySetOk: false };
+  }
+
+  // 顶层键的顺序也是规范的一部分（推进顺序不可调换，顺序即输出顺序）
+  if (JSON.stringify(required) !== JSON.stringify(CONTRACT_TOP_LEVEL_KEYS)) {
+    errors.push(`契约 schema 顶层键顺序不对：应为 [${CONTRACT_TOP_LEVEL_KEYS.join(' / ')}]，实际 [${required.join(' / ')}]`);
     ok = false;
   }
 
@@ -314,7 +396,7 @@ function checkSchemaShape(errors, schema) {
       ok = false;
     }
   }
-  return ok;
+  return { keySetOk: true, ok };
 }
 
 /**
@@ -364,12 +446,28 @@ function checkMasterAlignment(errors, schema, masterText) {
 
 /**
  * 契约样例校验：docs/CAREER_SCHEMA.sample.json 若存在，就按 docs/CAREER_SCHEMA.md 的
- * schema 校验一遍（样例文件由 Task 2 创建；不存在时不报错）。
+ * schema 校验一遍。
+ *
+ * 「契约 md 在、样例不在」= 报红：契约出来了却没有基准样例，
+ * 「契约能校验一份真实输出」这条腿就静默消失了（样例文件不存在时静默返回 = 0 错）。
+ * 「两者都不在」（Task 1 阶段）= 不报：那时样例本来就不该存在。
  */
 function checkSchemaSample(root, schema, errors) {
-  if (!schema) return;
+  const schemaMd = path.join(root, 'docs', 'CAREER_SCHEMA.md');
   const sampleFile = path.join(root, 'docs', 'CAREER_SCHEMA.sample.json');
-  if (!fs.existsSync(sampleFile)) return;
+  const schemaMdExists = fs.existsSync(schemaMd);
+  const sampleExists = fs.existsSync(sampleFile);
+
+  if (!schemaMdExists) {
+    // 契约 md 都没有 —— readSchema 已经报过「缺少 docs/CAREER_SCHEMA.md」；样例先放着不管
+    return;
+  }
+  if (!sampleExists) {
+    errors.push('缺少基准样例 docs/CAREER_SCHEMA.sample.json（契约已存在，基准样例必须同时存在）');
+    return;
+  }
+  if (!schema) return; // 契约 md 有问题（解析失败/没有 json 块），已经报过了
+
   let sample;
   try {
     sample = JSON.parse(fs.readFileSync(sampleFile, 'utf8'));
@@ -384,14 +482,39 @@ function checkSchemaSample(root, schema, errors) {
   }
 }
 
-function run(root) {
+/**
+ * Task 8 的四份过程文档。
+ * Task 8 之前它们不存在（仓库里只有一个空的 candidates/ 占位目录），所以「该不该报」要看阶段：
+ *   - 四份里至少有一份已经出现（Task 8 开工了）→ 四份必须齐全且非空；
+ *   - opts.expectCandidates 为真（收尾核验时显式要求）→ 同上；
+ *   - 否则（Task 1~7 阶段）→ 不报。
+ */
+function checkCandidates(errors, dir, opts) {
+  const cdir = path.join(dir, 'candidates');
+  // 「Task 8 开工了」的判据：这四份里**至少有一份**已经出现。
+  // （目录本身在 Task 1 阶段就是个空的占位目录，不能拿目录存在与否当判据。）
+  const started = CANDIDATE_FILES.some((f) => fs.existsSync(path.join(cdir, f)));
+  if (!started && opts.expectCandidates !== true) return;
+  for (const f of CANDIDATE_FILES) {
+    const p = path.join(cdir, f);
+    if (!fs.existsSync(p)) {
+      errors.push(`candidates/ 缺少 ${f}`);
+      continue;
+    }
+    if (!fs.readFileSync(p, 'utf8').trim()) {
+      errors.push(`candidates/${f} 内容为空`);
+    }
+  }
+}
+
+function run(root, opts = {}) {
   const errors = [];
   const dir = path.join(root, SKILL_DIR);
 
-  errors.push(...baseline(root));
+  errors.push(...baseline(root, opts));
 
   const schema = readSchema(root, errors);
-  checkSchemaShape(errors, schema);
+  const shape = checkSchemaShape(errors, schema);
   checkSchemaSample(root, schema, errors);
 
   // 已有基线 skill：结构检查（规范文件不在此列；A2 不对基线强制）
@@ -401,7 +524,7 @@ function run(root) {
   try {
     entries = fs.readdirSync(dir, { withFileTypes: true });
   } catch (e) {
-    errors.push(`缺少 ${SKILL_DIR.split(path.sep).join('/')} 目录 —— ${e.message}`);
+    errors.push(`缺少 ${gitPath(SKILL_DIR)} 目录 —— ${e.message}`);
     entries = [];
   }
   for (const entry of entries) {
@@ -448,19 +571,30 @@ function run(root) {
       checkTestPrompts(errors, skillName, prompts);
     }
 
-    if (isMaster) checkMasterAlignment(errors, schema, text);
+    // 键集不对时不做对齐 —— 拿错的键集去核对 master，只会报出一堆方向相反的噪音
+    if (isMaster && shape.keySetOk) checkMasterAlignment(errors, schema, text);
   }
+
+  // Task 8 的四份过程文档（阶段判定见 checkCandidates）
+  checkCandidates(errors, dir, opts);
 
   return { ok: errors.length === 0, errors };
 }
 
 module.exports = {
   run, baseline, NEW_SKILLS, REQUIRED_TERMS, MUTABLE_BASELINE,
-  BASELINE_FILE_COUNT, CONTRACT_TOP_LEVEL_KEYS, CONTRACT_ENUMS, mentionsKey,
+  BASELINE_FILE_COUNT, BASELINE_COMMIT, CANDIDATE_FILES,
+  CONTRACT_TOP_LEVEL_KEYS, CONTRACT_ENUMS, mentionsKey,
 };
 
 if (require.main === module) {
-  const result = run(ROOT);
+  const opts = {};
+  // 收尾核验时显式要求 Task 8 的四份过程文档（Task 8 之前不该存在，不该报）
+  if (process.argv.includes('--expect-candidates') || process.env.SEG2_EXPECT_CANDIDATES === '1') {
+    opts.expectCandidates = true;
+  }
+  if (process.env.SEG2_BASELINE_COMMIT) opts.baselineCommit = process.env.SEG2_BASELINE_COMMIT;
+  const result = run(ROOT, opts);
   if (result.ok) {
     console.log('✓ 全部校验通过');
   } else {
