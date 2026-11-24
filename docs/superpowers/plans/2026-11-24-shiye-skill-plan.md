@@ -2172,8 +2172,14 @@ git commit -m "feat(skills): 加 shiye-master —— 事业择业决策链总入
 
 - [ ] **Step 5: 跑校验并提交**
 
-Run: `node scripts/validate-skills.js`
+Run: `node scripts/validate-skills.js --expect-candidates`
 Expected: 退出码 0，输出 `✓ 全部校验通过`
+
+> `--expect-candidates` 让校验器**显式要求** `candidates/` 下 4 份过程文档齐全且非空。
+> 不带这个参数时，校验器的判据是「四份里至少出现一份」——
+> 因为 Task 8 之前这四份根本不存在，不能让常规校验一直报错。
+> 但正因如此，**一份都没写**这种情况只有加了这个参数才查得出来，
+> 所以 Task 8 的收尾与 Task 10 的总复验都必须带上它。
 
 ```bash
 cd D:/Software/ClaudeCodeProject/zhouyi_seg2
@@ -2420,10 +2426,13 @@ suiyun-shiye → `dayun-fenxi` + `xi-ji-quyong`。
 
 - [ ] **Step 7: 跑校验 —— 确认基线 36 个文件仍逐字未动**
 
-Run: `node scripts/validate-skills.js`
+Run: `node scripts/validate-skills.js --expect-candidates`
 Expected: 退出码 0，输出 `✓ 全部校验通过`
 
 若报「基线文件被改动」，说明误改了 36 个受保护文件之一 —— `git checkout` 恢复那一个文件再查。
+
+> `--expect-candidates` 让校验器显式要求 `candidates/` 下 4 份过程文档齐全且非空 ——
+> 这是「Task 8 整个被跳过」的唯一检出手段（不带该参数时判据是「至少出现一份」）。
 
 - [ ] **Step 8: 单独核对 36 个受保护文件的 blob**
 
@@ -2432,10 +2441,10 @@ Expected: 退出码 0，输出 `✓ 全部校验通过`
 
 ```bash
 cd D:/Software/ClaudeCodeProject/zhouyi_seg2
-node scripts/validate-skills.js
+node scripts/validate-skills.js --expect-candidates
 ```
 
-Expected: 退出码 0，输出 `✓ 全部校验通过`（此时 5 个新 skill 与契约都已建好）
+Expected: 退出码 0，输出 `✓ 全部校验通过`（此时 5 个新 skill、契约、candidates 四份都已建好）
 
 再单独核对 36 个受保护文件：
 node -e "
