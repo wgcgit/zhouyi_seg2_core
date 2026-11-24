@@ -17,6 +17,14 @@
   因此清单必须与**基线提交 `f7bd915`** 的树（`git ls-tree -r f7bd915 -- skills/bazi-tuipan`）逐条比对：
   路径集合与 blob sha 集合双向相等才算通过。基线提交不可改（改了就换 SHA），
   故这是**不可自证**的锚点。
+- **锚点不可被环境变量绕过**：不得提供能把锚点换成任意提交（尤其 `HEAD`）的开关。
+  `HEAD` 会让「基线提交里的 blob」变成被篡改后的内容，锚定自我循环、篡改完全隐身。
+  测试要换锚点，走函数参数（`run(root, { baselineCommit })`），不走环境变量。
+- **`参考资料/` 5 份原始 txt 同样不可改**：它们是蒸馏出处的追溯依据，自首提交 `f7bd915` 起一字未改。
+  校验器必须对它们做常驻的工作区 blob 比对（同样用 `git hash-object`），
+  而不是只在收尾时人工 `git diff` 一次。
+  注意 `git ls-tree` 的 pathspec 要覆盖 `参考资料/`，且必须加 `-c core.quotepath=false`
+  （中文路径会被 git 转义成八进制）。
 - **运行时只加载 `Interpretation` 段**：`A2` / `Execution` 是流程指令，不进 system prompt。新 skill 的 `Interpretation` 段内不得出现「输出 JSON」「输出字段名」这类流程/格式指令。
 - **每个新 skill 必须有 `test-prompts.json`**：至少 4 条 `should_fire: true` + 至少 1 条 `should_fire: false`（此规则**只对新 skill 生效**，不作为全局 lint —— 基线的 `paipan-jichu` 是 3/3、`dizhi-banhe` 是 5/0，本来就不满足）。
 - **`test-prompts.json` 字段**：`id` / `prompt` / `expected_skill` / `should_fire` / `category` / `note`，六项齐全，`id` 在文件内唯一。
@@ -2488,7 +2496,18 @@ git commit -m "docs(skills): 更新索引与过程文档 —— 收录事业择�
 - [ ] **Step 1: 跑完整测试**
 
 Run: `npm test`
-Expected: 单测全部 PASS（15 个 test）+ `✓ 全部校验通过`
+Expected: 单测全部 PASS（98 个 test）+ `✓ 全部校验通过`
+
+再单独跑一次带 `--expect-candidates` 的收尾核验 —— 这是「Task 8 被整个跳过」的唯一检出手段
+（不带该参数时，校验器的判据是「四份里至少出现一份」，
+四份全删就退化成「没开工」而静默）：
+
+```bash
+cd D:/Software/ClaudeCodeProject/zhouyi_seg2
+node scripts/validate-skills.js --expect-candidates
+```
+
+Expected: 退出码 0，输出 `✓ 全部校验通过`
 
 - [ ] **Step 2: 核对最终文件清单**
 
@@ -2514,6 +2533,9 @@ Expected 包含：
 Expected: `受保护文件 36 个，被改动 0 个`
 
 - [ ] **Step 4: 确认参考资料未被修改**
+
+主校验器已对 `参考资料/` 5 份 txt 做常驻的 blob 比对（改了会报「参考资料文件被改动」）。
+这里再人工核对一次，作为双重确认：
 
 ```bash
 cd D:/Software/ClaudeCodeProject/zhouyi_seg2
