@@ -956,17 +956,11 @@ node scripts/validate-skills.js
 
 Expected: 退出码 1，但**不再有** `契约样例` 相关的错（其余 5 个新 skill 缺失的错仍在）
 
-确认拦住后，**删除临时脚本**：
-
-```bash
-rm D:/Software/ClaudeCodeProject/zhouyi_seg2/scripts/tmp-schema-smoke.js
-```
-
-- [ ] **Step 4: 提交**
+- [ ] **Step 5: 提交**
 
 ```bash
 cd D:/Software/ClaudeCodeProject/zhouyi_seg2
-git add docs/CAREER_SCHEMA.md
+git add docs/CAREER_SCHEMA.md docs/CAREER_SCHEMA.sample.json
 git commit -m "docs: 定事业专项 JSON 契约 —— 10 个顶层键与闭合枚举"
 ```
 
@@ -2512,7 +2506,7 @@ git commit -m "docs(skills): 更新索引与过程文档 —— 收录事业择�
 - [ ] **Step 1: 跑完整测试**
 
 Run: `npm test`
-Expected: 单测全部 PASS（98 个 test）+ `✓ 全部校验通过`
+Expected: 单测全部 PASS（test 数以实际输出为准）+ `✓ 全部校验通过`
 
 再单独跑一次带 `--expect-candidates` 的收尾核验 —— 这是「Task 8 被整个跳过」的唯一检出手段
 （不带该参数时，校验器的判据是「四份里至少出现一份」，
