@@ -175,10 +175,10 @@ function baseline(root, opts = {}) {
     const onlyTree = [...tree.keys()].filter((p) => !man.has(p)).sort();
     const onlyMan = [...man.keys()].filter((p) => !tree.has(p)).sort();
     const shaDiff = [...man.keys()].filter((p) => tree.has(p) && tree.get(p) !== man.get(p)).sort();
-    for (const p of onlyTree) problems.push(`基线清单与基线提交 ${commit} 不一致：清单缺少 ${p}`);
-    for (const p of onlyMan) problems.push(`基线清单与基线提交 ${commit} 不一致：清单多出 ${p}`);
+    for (const p of onlyTree) problems.push(`基线清单与基线提交不一致（基线提交 ${commit}）：清单缺少 ${p}`);
+    for (const p of onlyMan) problems.push(`基线清单与基线提交不一致（基线提交 ${commit}）：清单多出 ${p}`);
     for (const p of shaDiff) {
-      problems.push(`基线清单与基线提交 ${commit} 不一致：${p} 的 blob sha 不符（清单 ${man.get(p).slice(0, 8)} ≠ 基线 ${tree.get(p).slice(0, 8)}）`);
+      problems.push(`基线清单与基线提交不一致（基线提交 ${commit}）：${p} 的 blob sha 不符（清单 ${man.get(p).slice(0, 8)} ≠ 基线 ${tree.get(p).slice(0, 8)}）`);
     }
   }
 
