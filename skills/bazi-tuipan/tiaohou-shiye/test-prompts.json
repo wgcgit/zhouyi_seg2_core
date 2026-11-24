@@ -1,0 +1,50 @@
+[
+  {
+    "id": "ths-001",
+    "prompt": "我的八字属于什么气候？需要什么调候用神？",
+    "expected_skill": "tiaohou-shiye",
+    "should_fire": true,
+    "category": "应触发",
+    "note": "问全局气候与调候药"
+  },
+  {
+    "id": "ths-002",
+    "prompt": "调候用神是真药还是假药？怎么判断？",
+    "expected_skill": "tiaohou-shiye",
+    "should_fire": true,
+    "category": "应触发",
+    "note": "问药的真假辨别"
+  },
+  {
+    "id": "ths-003",
+    "prompt": "湿重泥泞的命局适合做什么行业？",
+    "expected_skill": "tiaohou-shiye",
+    "should_fire": true,
+    "category": "应触发",
+    "note": "问气机对应的生机赛道"
+  },
+  {
+    "id": "ths-004",
+    "prompt": "燥热局和秋金肃局的择业策略有什么不同？",
+    "expected_skill": "tiaohou-shiye",
+    "should_fire": true,
+    "category": "应触发",
+    "note": "比较两种气机的择业"
+  },
+  {
+    "id": "ths-005",
+    "prompt": "缺火是不是就一定该去做火的行业？",
+    "expected_skill": "tiaohou-shiye",
+    "should_fire": true,
+    "category": "应触发",
+    "note": "问调候误区"
+  },
+  {
+    "id": "ths-006",
+    "prompt": "帮我看看八字适合做什么行业",
+    "expected_skill": "tiaohou-shiye",
+    "should_fire": false,
+    "category": "诱饵-边界模糊",
+    "note": "没有给出具体八字，缺调候判断所需的命局信息"
+  }
+]
