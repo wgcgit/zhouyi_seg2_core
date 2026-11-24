@@ -38,11 +38,18 @@
   `playbooks[].actions`、`timeline`、`timeline[].liunianWindows`、`summary.notes` 这 **8 个数组必须非空** ——
   空数组等于「样例只覆盖了半边」（`playbooks: []`、`summary.notes: []` 都能蒙混过关）。
   `scripts/validate-skills.js` 对这 8 条路径做常驻断言（契约有没有声明 `minItems`）。
-  **唯一豁免是 `xiJi.ciXi`（次喜 / 辅助用神）**：`参考资料/事业3.txt:78` 明确区分
-  「必须救的急药」与「锦上添花的辅药」—— 辅助用神本质可选，强行要求非空等于**逼模型编一个不存在的次喜**。
+  **唯一豁免是 `xiJi.ciXi`（喜忌层的次喜）**：喜忌层的**必填产出只有两项** —— 喜用（`xi`）与忌神（`ji`）。
+  次喜是**第三档、可选的加分项**：`参考资料/事业1.txt:56` 的喜忌层只给「喜用神 / 忌神」两档，全文没有「次喜」这一档；
+  只有基准用例 `参考资料/事业推理结果.txt:9` 出现过「次喜丙火，泄金化煞、照亮格局」—— 那是**锦上添花**，不是必要条件。
+  强行要求非空等于**逼模型编一个不存在的次喜**。
   故 `xiJi.ciXi` 允许为空数组，且校验器额外断言它**不得**声明 `minItems >= 1`（防止日后被误加回去）。
   对照：`xiJi.ji`（忌神）**必须非空** —— `参考资料/事业1.txt:56`「缺但为忌，补了反而压力大」
   说明忌神是由喜用神关系**派生**出来的，不因该五行不在原局就消失，因此不存在「无忌神」的情形。
+- ⚠️ **调候层与喜忌层不可混用**：契约里有两个「次」级字段，分属两层，**不得互相顶替**：
+  `tiaoHou.secondaryDrug` 是**调候层**的次药（`参考资料/事业3.txt:18/28/38/48/58/68` 六大气机每条都给出
+  「调候主药 + 次药」，故它**必填**）；`xiJi.ciXi` 是**喜忌层**的次喜（可空）。
+  本命例两层恰好都是丙火，但那是巧合，不是同一件事。
+  `参考资料/事业3.txt:78` 的「急药 / 辅药」是**调候层**的说法，**不能**用来论证喜忌层的 `ciXi` 可空。
 - **提交信息用中文**，格式 `<type>: <简述>`，type 取 `feat` / `fix` / `docs` / `chore` / `test`。
 
 ## File Structure
@@ -699,6 +706,7 @@ git commit -m "test: 加校验工具链 —— skill 结构 / 契约 / 基线完
 **Files:**
 - Create: `docs/CAREER_SCHEMA.md`
 - Create: `docs/CAREER_SCHEMA.sample.json`
+- Modify: `scripts/validate-skills.test.js`（Step 5：加两条机器断言）
 
 **Interfaces:**
 - Consumes: Task 1 的 `readSchema()`（从 md 的 ```json 块解析）、`checkValue()`、
@@ -738,14 +746,27 @@ git commit -m "test: 加校验工具链 —— skill 结构 / 契约 / 基线完
 - `case` —— 命例基本盘：性别与四柱。
 - `monthCommand` —— 月令（提纲）给出的开局：月支、日主、季夏/隆冬等季节气候、一句话定性。
 - `pattern` —— 格局底盘：格局类型、成格还是破格、财库等核心结构、成败理由。
+  成败**一律按 `参考资料/事业2.txt:85-88` 重新判定**，不得照抄任何既有样例：
+  **成格** = 格局清、有护卫、有去路（可以直接走对应赛道当主业，放大格局优势）；
+  **破格** = 用神被冲、被合、被克（不是完全不能做，是不能重仓押这条线，要找通关赛道或换一条做功链条）；
+  三条都判不出就填 `不清`。
+  注意「破格」说的是**不能重仓押这条线**，不等于「什么都不能做」——
+  重仓 / 轻试 / 守成是岁运层对**赛道**的取舍（`timeline[].verdict`），两处不可互相推导。
 - `tiaoHou` —— 调候：全局气候类型、主药（第一调候用神）、次药、药的真假状态、判断理由、还缺什么。
+  `primaryDrug` / `secondaryDrug` 是**调候层**的主药与次药（`参考资料/事业3.txt` 六大气机各给一对，**必填**）。
 - `xiJi` —— 喜忌：喜用五行、次喜五行、忌神五行。
   其中 `xi`（喜用）与 `ji`（忌神）**必非空**（忌神由喜用关系派生，即使该五行不在原局仍是忌）；
-  `ciXi`（次喜 / 辅助用神）**允许为空数组** —— 它是「锦上添花的辅药」，本次命例若没有明显次喜就留空，
+  `ciXi`（次喜）**允许为空数组** —— 它是**喜忌层的第三档加分项**，本次命例若没有明显次喜就留空，
   **不得为凑满而编一个次喜**。
+  ⚠️ `xiJi.ciXi`（喜忌层次喜）与 `tiaoHou.secondaryDrug`（调候层次药）**分属两层，不得互相顶替**；
+  本命例两层恰好都是丙火，那是巧合。
 - `boundaries` —— **忌神赛道的边界**：某五行不是不能碰，而是缺了通关条件会怎样。每条三要素：五行、为什么、有条件时怎么碰。
 - `playbooks` —— **打法分档**：按体量分四档（早期借平台 / 轻创业 / 重资产操盘 / 合伙），每档给适用条件与具体动作。
-- `timeline` —— 大运时间表：每步大运的干支、五行类型、策略定性（重仓/轻试/守成）、主赛道、对应打法档位，以及该运内的流年窗口。
+  **四档齐全**：四档都要给出；某档在本命例确实不适用，也要保留该档并写明不适用及理由，不许省略该档。
+  `timeline[].playbook` 指向的档位**必须**是 `playbooks[].scale` 里的某一项。
+- `timeline` —— 大运时间表：**每步大运一条**，干支、五行类型、策略定性（重仓/轻试/守成）、主赛道、对应打法档位，以及该运内的流年窗口。
+  `ganZhi` 是**单步**大运的干支（如 `癸亥`）；资料里的「水运（亥、子）」是**五行分组**的口语说法
+  （该组含 `癸亥`、`甲子` 两步），落到本字段时**逐步拆开、各填各的干支**。
   其中 `liunianWindows` 的「窗口」定义是：**该运内值得单列的机会年或坑年，至少一个** ——
   机会类如「透出调候用神」「合走调候药」，坑类如「刑冲格局根基」「忌神扎堆」；
   `action` 枚举的 `宜` / `忌` 两类都装得下，所以**哪怕一步大运全是坑年，也照样列出坑窗口**，
@@ -912,16 +933,38 @@ node scripts/validate-skills.js
 {
   "case": { "gender": "男", "pillars": { "year": "戊辰", "month": "己未", "day": "乙亥", "hour": "乙酉" } },
   "monthCommand": { "monthBranch": "未", "dayMaster": "乙木", "seasonClimate": "季夏燥土", "verdict": "财星当令，财多身难独担" },
-  "pattern": { "type": "财格", "verdict": "成格", "storeHouse": "辰为水库，未为燥土财库，双库夹局", "reasoning": "财库厚而闭" },
+  "pattern": { "type": "财格", "verdict": "破格", "storeHouse": "辰为水库，未为燥土财库，双库夹局", "reasoning": "财星被双乙比劫夺财（用神被克），且财多身难独担、财库厚而闭" },
   "tiaoHou": { "climateType": "燥热局", "primaryDrug": "癸水", "secondaryDrug": "丙火", "drugStatus": "藏药", "drugReasoning": "亥藏壬水有润根，戊己厚土克水", "gap": "原局无丙透，缺阳光泄秀通关" },
   "xiJi": { "xi": ["水（印）", "木（比劫）"], "ciXi": ["丙火"], "ji": ["叠土", "叠金"] },
   "boundaries": [{ "element": "土金赛道", "why": "财重压身、杀重克身", "condition": "须有水木通关，方可轻碰" }],
-  "playbooks": [{ "scale": "轻创业", "condition": "水印流通之年", "actions": ["咨询工作室", "独立方案团队"] }],
-  "timeline": [{ "ganZhi": "亥子", "type": "水运", "verdict": "重仓", "mainTrack": "深耕专业、铺底盘", "playbook": "早期", "liunianWindows": [{ "year": 2030, "signal": "透出调候用神", "action": "宜" }] }],
+  "playbooks": [
+    { "scale": "早期", "condition": "财埋印、杀在后，宜借平台养印", "actions": ["优先平台与专业岗", "进大企业、规划院、设计或工程基建体系", "攒证书、人脉、报批确权套路"] },
+    { "scale": "轻创业", "condition": "水印流通之年可以启动，门槛低、风险可控", "actions": ["咨询工作室", "独立方案团队", "技术顾问"] },
+    { "scale": "重资产", "condition": "必须是「水印扶身、冲开财库、丙火通关」的大运流年窗口", "actions": ["厚积薄发，不是少年创业命", "等窗口期再开长线盘"] },
+    { "scale": "合伙", "condition": "双乙比劫，有同气帮扶，但财库重、容易争利确权纠纷", "actions": ["先定规则", "锁产权", "留风控"] }
+  ],
+  "timeline": [{ "ganZhi": "癸亥", "type": "水运", "verdict": "重仓", "mainTrack": "深耕专业、铺底盘", "playbook": "早期", "liunianWindows": [{ "year": 2033, "signal": "透出调候用神", "action": "宜" }] }],
   "transition": { "risk": "藤萝根基未稳，见财心动、盲目重仓", "advice": "交运前后一两年不新开长线重资产盘" },
   "summary": { "strategy": "底盘待机", "notes": ["喜水木，忌叠土叠金"] }
 }
 ```
+
+> **本样例的 `pattern.verdict` 是「破格」，不是「成格」** —— 按 `参考资料/事业2.txt:87-88` 判：
+> **成格**要「格局清 + 有护卫 + 有去路」，**破格**是「用神被冲、被合、被克」。本盘成格三条件全缺：
+> 双乙比劫夺财 → 格局不清（`参考资料/事业2.txt:8` 正财格「格局破（比劫夺财）容易分红纠纷、被人分利、资金被套」；
+> `参考资料/事业推理结果.txt:16`「双乙比劫…但财库重、容易争利确权纠纷」）；
+> 财多身难独担 → 无护卫；财库厚而闭 → 库不开、无去路。
+> 用神（财）被比劫所克，正落在「破格：用神被冲、被合、被克」这一条上。
+> 破格的对策也在原文里：`参考资料/事业推理结果.txt:11`「不是不能碰土金赛道…只是必须有水木通关」
+> 与 `参考资料/事业2.txt:88`「破格…要找通关赛道」同源 —— 所以 `summary.strategy` 是「底盘待机」、
+> `boundaries[0].condition` 是「须有水木通关，方可轻碰」，三者自洽。
+
+> **`timeline[0].ganZhi` 是 `癸亥`（单步干支），不是「亥子」** —— 「水运（亥、子）」是
+> `参考资料/事业推理结果.txt:17` 的**五行分组**说法：该命阳年男命顺排，自月柱 `己未` 起
+> `庚申 辛酉 壬戌 **癸亥** 甲子 乙丑 丙寅 丁卯 戊辰 己巳 庚午 …`，
+> 分组「亥、子」正是其中的 `癸亥` 与 `甲子` 两步。落到 `timeline[]` 时逐步拆开、各填各的干支。
+> 相应地，`liunianWindows` 的宜窗口取 `2033`（癸丑年，癸水透干 = 透出调候主药）
+> —— 原来的 `2030` 是庚戌年，庚为叠金忌神、戌为燥土，与「透出调候用神」这个信号自相矛盾。
 
 - [ ] **Step 3: 跑校验，确认契约与样例都被认可**
 
@@ -960,7 +1003,7 @@ node scripts/validate-skills.js
 
 Expected: 退出码 1，输出 `契约样例 docs/CAREER_SCHEMA.sample.json 不符合契约: $.pattern.verdict: 值 "格局很好" 不在枚举 [成格 / 破格 / 不清] 内`
 
-确认拦住后，**改回 `"成格"`**（不要用 git checkout —— 样例是本任务新建的、未入库）：
+确认拦住后，**改回 `"破格"`**（不要用 git checkout —— 样例是本任务新建的、未入库）：
 
 ```bash
 cd D:/Software/ClaudeCodeProject/zhouyi_seg2
@@ -969,11 +1012,40 @@ node scripts/validate-skills.js
 
 Expected: 退出码 1，但**不再有** `契约样例` 相关的错（其余 5 个新 skill 缺失的错仍在）
 
-- [ ] **Step 5: 提交**
+- [ ] **Step 5: 加两条机器断言，把「人读表」和「四档口径」钉死**
+
+契约里有两处**靠人手抄、靠人口头约定**的地方，不变成机器断言就必然漂移：
+
+1. **枚举速查表 == 机读契约块**：`docs/CAREER_SCHEMA.md` 顶部那张「枚举速查」表与下方 ```json 块的 `enum`
+   是**手抄的两份**。现在校验器只钉 json 块 —— 改表不改块（或反之）**不会报红**。
+2. **样例的打法四档齐全 + 档位引用闭合**：`playbooks[]` 必须覆盖 `早期 / 轻创业 / 重资产 / 合伙` 四档，
+   且每个 `timeline[].playbook` 的取值必须是某个 `playbooks[].scale` ——
+   否则会出现「引用了一个不存在的档位」（原样例就是 `timeline[0].playbook = "早期"`，
+   而 `playbooks[]` 里只有 `轻创业`）。
+
+两条断言都加在 `scripts/validate-skills.test.js` 里，**直接读真实仓的文件**
+（`docs/CAREER_SCHEMA.md` / `docs/CAREER_SCHEMA.sample.json`）；文件不存在时 `t.skip()` 而不是判红。
+
+⚠️ **不要把断言写进 `scripts/validate-skills.js` 的 `run()`** ——
+测试夹具 `makeCompliantRepo()` 造出来的 `docs/CAREER_SCHEMA.md` 是由 `schemaMd()` 生成的，
+**它不含那张表**；放进 `run()` 会让所有夹具用例集体报红。
+
+写完必须**验证它真能红**（否则又是一条恒绿装饰）：
 
 ```bash
 cd D:/Software/ClaudeCodeProject/zhouyi_seg2
-git add docs/CAREER_SCHEMA.md docs/CAREER_SCHEMA.sample.json
+# 场景 1：把「枚举速查」表里 pattern.verdict 那一行的取值改掉 → 对应断言必须报红
+# 场景 2：把样例的 playbooks 删到只剩一档 → 对应断言必须报红
+# 场景 3：把样例 timeline[0].playbook 改成一个 playbooks 里没有的档位 → 对应断言必须报红
+```
+
+三个场景改坏 → 确认报红 → 全部还原 → 确认 `npm run test:unit` 全绿。
+
+- [ ] **Step 6: 提交**
+
+```bash
+cd D:/Software/ClaudeCodeProject/zhouyi_seg2
+git add docs/CAREER_SCHEMA.md docs/CAREER_SCHEMA.sample.json scripts/validate-skills.test.js
 git commit -m "docs: 定事业专项 JSON 契约 —— 10 个顶层键与闭合枚举"
 ```
 
@@ -990,6 +1062,12 @@ git commit -m "docs: 定事业专项 JSON 契约 —— 10 个顶层键与闭合
 **Interfaces:**
 - Consumes: `参考资料/事业3.txt`；既有 skill `shengshuai-panbie`（旺衰）、`xi-ji-quyong`（喜忌）
 - Produces: `skills/bazi-tuipan/tiaohou-shiye/SKILL.md`（`name: tiaohou-shiye`）、`skills/bazi-tuipan/tiaohou-shiye/test-prompts.json`
+
+**关键约束**：本 skill 只讲**调候层**。契约里有两个「次」级字段，分属两层，**不得混成一句话**：
+`tiaoHou.secondaryDrug`（调候层次药）属调候层、**必填**（`参考资料/事业3.txt:18/28/38/48/58/68` 六大气机每条都给了主药 + 次药）；
+`xiJi.ciXi`（喜忌层次喜）属**喜忌层**、可空。本命例两层恰好都是丙火，但那是巧合，不是同一件事 ——
+既不要把调候层的次药说成可有可无，也不要因为喜忌层也有个「次喜」就把两处并成一条规则。
+`参考资料/事业3.txt:78` 的「急药 / 辅药」是**调候层**的说法，不要拿它去讲喜忌层。
 
 - [ ] **Step 1: 写 `SKILL.md`**
 
@@ -1209,6 +1287,13 @@ git commit -m "feat(skills): 加 tiaohou-shiye —— 调候六气机与药真�
 - Consumes: `参考资料/事业2.txt`；既有 skill `geshi-dingxing`
 - Produces: `skills/bazi-tuipan/geshi-shiye/SKILL.md`（`name: geshi-shiye`）、对应 `test-prompts.json`
 
+**关键约束**：格局的成破**一律按 `参考资料/事业2.txt:85-88` 判定**，不得照抄任何既有样例：
+**成格** = 格局清 + 有护卫 + 有去路（可以直接走对应赛道当主业，放大格局优势）；
+**破格** = 用神被冲 / 被合 / 被克（不是完全不能做，是**不能重仓押这条线**，要找通关赛道或换一条做功链条）；
+三条都判不出就填 `不清`。
+基准样例（`docs/CAREER_SCHEMA.sample.json`）的 `pattern.verdict` 只是一份**判定结果**，**不是判定规则** ——
+写 skill 时必须把上面三条判据讲出来，并说清「破格 ≠ 什么都不能做」。
+
 - [ ] **Step 1: 写 `SKILL.md`**
 
 必须覆盖 19 个词：`正财格` `偏财格` `正官格` `七杀格` `正印格` `偏印格` `食神格` `伤官格` `比肩格` `劫财格` `成格` `破格` `通关` `伤官制杀` `杀印相生` `食伤生财` `财生官` `官印相生` `用库成格`
@@ -1386,6 +1471,13 @@ git commit -m "feat(skills): 加 geshi-shiye —— 十格与七组配格的行�
 - Consumes: `参考资料/事业1.txt`；既有 skill `wuxing-shengke`、`xi-ji-quyong`
 - Produces: `skills/bazi-tuipan/wuxing-shiye/SKILL.md`（`name: wuxing-shiye`）、对应 `test-prompts.json`
 
+**关键约束**：本 skill 讲**五行载体层**：喜用神 → 五行载体 → 实体赛道
+（`参考资料/事业1.txt` 的五行核心象义、代表职业、性格适配、方位、复合行业）。
+层级不可混：`tiaoHou.secondaryDrug`（调候层次药，必填）与 `xiJi.ciXi`（喜忌层次喜，可空）分属两层，
+本命例恰好都是丙火，但本 skill 只负责把**喜用**落到实体赛道，不负责判定调候药真假、也不负责判定格局成破。
+喜忌层只出两档：**喜用**与**忌神**（`参考资料/事业1.txt:56`「缺但为忌，补了反而压力大」）；
+**次喜是喜忌层的第三档、可选**，不要当成必填项来教。
+
 - [ ] **Step 1: 写 `SKILL.md`**
 
 必须覆盖 11 个词：`木` `火` `土` `金` `水` `代表职业` `性格适配` `方位` `复合行业` `喜用神` `做功链条`
@@ -1540,6 +1632,13 @@ git commit -m "feat(skills): 加 wuxing-shiye —— 五行载体与复合行业
 **Interfaces:**
 - Consumes: `参考资料/事业4.txt`；既有 skill `dayun-fenxi`、`xi-ji-quyong`
 - Produces: `skills/bazi-tuipan/suiyun-shiye/SKILL.md`（`name: suiyun-shiye`）、对应 `test-prompts.json`
+
+**关键约束**：`timeline[].ganZhi` 是**单步**大运的干支（如 `癸亥`），**不是**五行分组。
+`参考资料/事业推理结果.txt:17` 的「水运（亥、子）」是**五行分组**的说法 ——
+该命阳年男命顺排，自月柱 `己未` 起 `庚申 辛酉 壬戌 癸亥 甲子 乙丑 丙寅 丁卯 戊辰 己巳 庚午 …`，
+分组「亥、子」正是其中的 `癸亥` 与 `甲子` 两步；落到契约里必须**逐步拆开、每步一条、各填各的干支**。
+本 skill 负责大运三策略（顺势重仓 / 轻试待机 / 守势收缩）与流年窗口信号，
+不负责判定格局成破、不负责定调候药。
 
 - [ ] **Step 1: 写 `SKILL.md`**
 
@@ -1759,6 +1858,11 @@ git commit -m "feat(skills): 加 suiyun-shiye —— 岁运时间表与出手窗
 - Produces: `skills/bazi-tuipan/shiye-master.skill.md`（`name: shiye-master`）、`skills/bazi-tuipan/shiye-master/test-prompts.json`
 
 **关键约束**：校验脚本要求 `Execution（执行步骤）` 段**逐字出现契约的全部 10 个顶层键名** —— `case`、`monthCommand`、`pattern`、`tiaoHou`、`xiJi`、`boundaries`、`playbooks`、`timeline`、`transition`、`summary`。少一个就报错。
+
+另有两处口径必须写进总入口，否则下游会各自漂移：
+- `playbooks` **四档齐全**（`早期` / `轻创业` / `重资产` / `合伙`；某档在本命例确实不适用，也要保留该档并写明不适用及理由），
+  且 `timeline[].playbook` 的取值**必须**是某个 `playbooks[].scale`。
+- `timeline[].ganZhi` 是**单步**大运的干支；「水运（亥、子）」是**五行分组**，逐步拆开、各填各的干支。
 
 - [ ] **Step 1: 写 `shiye-master.skill.md`**
 
