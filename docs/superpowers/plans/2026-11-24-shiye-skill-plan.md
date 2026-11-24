@@ -12,6 +12,11 @@
 
 - **基线不可改动**：`skills/bazi-tuipan/` 下从 v2 拷贝来的 42 个文件必须逐字保持原样。其中 36 个是「运行时知识库文件」（19 个 skill 的 `SKILL.md` / `*.skill.md` 定义文件 + 17 份 `test-prompts.json`），另外 6 个是顶层过程文档（`BOOK_OVERVIEW.md`、`DIGEST.md`、`GLOSSARY.md`、`INDEX.md`、`PIPELINE_STATE.md`、`verified.md`）——**这 6 个允许在 Task 9 追加/修改**，其余 36 个任何任务都不得触碰。
 - **判定基线一致必须比 git blob，不看工作区**：`core.autocrlf=true` 会把检出文件转成 CRLF，`diff -r` 会误报差异。用 `git hash-object`。
+- **基线清单本身必须被锚定到基线提交**：`skills/bazi-tuipan/.baseline-manifest.txt` 是 42 个基线文件的 blob 清单，
+  但它自己也是工作区里的一个文件 —— 只信它，等于「清单说谁没变谁就没变」，清单被改一次即可放行任何篡改。
+  因此清单必须与**基线提交 `f7bd915`** 的树（`git ls-tree -r f7bd915 -- skills/bazi-tuipan`）逐条比对：
+  路径集合与 blob sha 集合双向相等才算通过。基线提交不可改（改了就换 SHA），
+  故这是**不可自证**的锚点。
 - **运行时只加载 `Interpretation` 段**：`A2` / `Execution` 是流程指令，不进 system prompt。新 skill 的 `Interpretation` 段内不得出现「输出 JSON」「输出字段名」这类流程/格式指令。
 - **每个新 skill 必须有 `test-prompts.json`**：至少 4 条 `should_fire: true` + 至少 1 条 `should_fire: false`（此规则**只对新 skill 生效**，不作为全局 lint —— 基线的 `paipan-jichu` 是 3/3、`dizhi-banhe` 是 5/0，本来就不满足）。
 - **`test-prompts.json` 字段**：`id` / `prompt` / `expected_skill` / `should_fire` / `category` / `note`，六项齐全，`id` 在文件内唯一。
@@ -2422,8 +2427,17 @@ Expected: 退出码 0，输出 `✓ 全部校验通过`
 
 - [ ] **Step 8: 单独核对 36 个受保护文件的 blob**
 
+先跑主校验器 —— 它会核对基线清单是否仍与基线提交 `f7bd915` 的树一致
+（清单被改过就会报「基线清单与基线提交不一致」）：
+
 ```bash
 cd D:/Software/ClaudeCodeProject/zhouyi_seg2
+node scripts/validate-skills.js
+```
+
+Expected: 退出码 0，输出 `✓ 全部校验通过`（此时 5 个新 skill 与契约都已建好）
+
+再单独核对 36 个受保护文件：
 node -e "
 const fs=require('fs'),path=require('path'),cp=require('child_process');
 const dir='skills/bazi-tuipan';
