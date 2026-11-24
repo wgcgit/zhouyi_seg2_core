@@ -47,6 +47,47 @@ const EXPECTED_MIN_ITEMS_PATHS = [
 const EXPECTED_OPTIONAL_PATHS = [['xiJi', 'ciXi']];
 
 /**
+ * 契约里 13 个对象节点的规范形状 —— 每个节点的「属性名集合」与「required 集合」。
+ * 权威来源：docs/superpowers/plans/2026-11-24-shiye-skill-plan.md 的 Task 2 契约 ```json 块
+ * （逐字抄，不凭记忆写）。路径写法沿用校验器的 'x[]' 约定（x[] = 数组 items）。
+ */
+const EXPECTED_OBJECT_SHAPE = [
+  {
+    path: [],
+    properties: ['case', 'monthCommand', 'pattern', 'tiaoHou', 'xiJi', 'boundaries', 'playbooks', 'timeline', 'transition', 'summary'],
+    required: ['case', 'monthCommand', 'pattern', 'tiaoHou', 'xiJi', 'boundaries', 'playbooks', 'timeline', 'transition', 'summary'],
+  },
+  { path: ['case'], properties: ['gender', 'pillars'], required: ['gender', 'pillars'] },
+  { path: ['case', 'pillars'], properties: ['year', 'month', 'day', 'hour'], required: ['year', 'month', 'day', 'hour'] },
+  {
+    path: ['monthCommand'],
+    properties: ['monthBranch', 'dayMaster', 'seasonClimate', 'verdict'],
+    required: ['monthBranch', 'dayMaster', 'seasonClimate', 'verdict'],
+  },
+  { path: ['pattern'], properties: ['type', 'verdict', 'storeHouse', 'reasoning'], required: ['type', 'verdict', 'storeHouse', 'reasoning'] },
+  {
+    path: ['tiaoHou'],
+    properties: ['climateType', 'primaryDrug', 'secondaryDrug', 'drugStatus', 'drugReasoning', 'gap'],
+    required: ['climateType', 'primaryDrug', 'secondaryDrug', 'drugStatus', 'drugReasoning', 'gap'],
+  },
+  { path: ['xiJi'], properties: ['xi', 'ciXi', 'ji'], required: ['xi', 'ciXi', 'ji'] },
+  { path: ['boundaries[]'], properties: ['element', 'why', 'condition'], required: ['element', 'why', 'condition'] },
+  { path: ['playbooks[]'], properties: ['scale', 'condition', 'actions'], required: ['scale', 'condition', 'actions'] },
+  {
+    path: ['timeline[]'],
+    properties: ['ganZhi', 'type', 'verdict', 'mainTrack', 'playbook', 'liunianWindows'],
+    required: ['ganZhi', 'type', 'verdict', 'mainTrack', 'playbook', 'liunianWindows'],
+  },
+  {
+    path: ['timeline[]', 'liunianWindows[]'],
+    properties: ['year', 'signal', 'action'],
+    required: ['year', 'signal', 'action'],
+  },
+  { path: ['transition'], properties: ['risk', 'advice'], required: ['risk', 'advice'] },
+  { path: ['summary'], properties: ['strategy', 'notes'], required: ['strategy', 'notes'] },
+];
+
+/**
  * 契约的规范形态 —— 这里就是「Task 2 必须落盘的东西」。
  * 与计划里的契约 json 块相比多了 9 处 minItems —— 那是本轮新增的硬性要求。
  */
@@ -1681,3 +1722,189 @@ test('样例顶层键集恰好是规范那 10 个键时不报键集错', () => {
   const r = run(root);
   assert.ok(!r.errors.some((e) => e.includes('顶层键集不对')), r.errors.join('\n'));
 });
+
+// ===========================================================================
+// 第六轮：Important 1 —— 契约的嵌套形状必须可断言
+// （做法 A：13 个对象节点的属性集 + required 集逐字钉死，样例键集随契约比对）
+// ===========================================================================
+
+/** 按路径取契约里的一个节点（'x[]' = 数组 items），取不到返回 null */
+function schemaNodeAt(schema, path) {
+  let node = schema;
+  for (const raw of path) {
+    const isArray = raw.endsWith('[]');
+    const name = isArray ? raw.slice(0, -2) : raw;
+    if (!node || !node.properties || !(name in node.properties)) return null;
+    node = node.properties[name];
+    if (isArray) {
+      if (!node || !node.items) return null;
+      node = node.items;
+    }
+  }
+  return node;
+}
+
+test('校验器钉住的契约对象形状与规范一致', () => {
+  const actual = validate.CONTRACT_OBJECT_SHAPE.map((e) => ({
+    path: e.path.slice(),
+    properties: e.properties.slice().sort(),
+    required: e.required.slice().sort(),
+  }));
+  const expected = EXPECTED_OBJECT_SHAPE.map((e) => ({
+    path: e.path.slice(),
+    properties: e.properties.slice().sort(),
+    required: e.required.slice().sort(),
+  }));
+  assert.deepStrictEqual(actual, expected);
+});
+
+test('规范形状常量本身自洽（每个节点的 properties 与 required 集合相等）', () => {
+  for (const e of validate.CONTRACT_OBJECT_SHAPE) {
+    assert.deepStrictEqual(
+      e.properties.slice().sort(), e.required.slice().sort(),
+      `节点 ${e.path.join('.')} 的 properties 与 required 不相等`,
+    );
+  }
+});
+
+test('规范契约本身不报形状错（13 个对象节点全部对得上）', () => {
+  const root = makeCompliantRepo();
+  const r = run(root);
+  assert.ok(!r.errors.some((e) => e.includes('形状不对')), r.errors.join('\n'));
+  assert.ok(!r.errors.some((e) => e.includes('规范之外的对象节点')), r.errors.join('\n'));
+});
+
+test('规范样例不报嵌套键集错（零误报）', () => {
+  const root = makeCompliantRepo();
+  const r = run(root);
+  assert.ok(!r.errors.some((e) => e.includes('嵌套键集不对')), r.errors.join('\n'));
+  assert.ok(!r.errors.some((e) => e.includes('CAREER_SCHEMA.sample.json')), r.errors.join('\n'));
+});
+
+// --- 终审实测的 S2~S8 七个场景 ---
+
+test('S2 契约里删掉 pattern.required 时报错', () => {
+  const schema = JSON.parse(JSON.stringify(CANONICAL_SCHEMA));
+  delete schema.properties.pattern.required;
+  const root = makeCompliantRepo({ schema });
+  const r = run(root);
+  assert.ok(r.errors.some((e) => e.includes('形状不对') && e.includes('$.pattern') && e.includes('required')), r.errors.join('\n'));
+});
+
+test('S3 契约里 pattern.properties 多一个没进 required 的字段时报错', () => {
+  const schema = JSON.parse(JSON.stringify(CANONICAL_SCHEMA));
+  schema.properties.pattern.properties.extraKey = { type: 'string' };
+  const root = makeCompliantRepo({ schema });
+  const r = run(root);
+  assert.ok(r.errors.some((e) => e.includes('形状不对') && e.includes('$.pattern') && e.includes('extraKey')), r.errors.join('\n'));
+});
+
+test('S4 契约里 timeline[].required 置空时报错', () => {
+  const schema = JSON.parse(JSON.stringify(CANONICAL_SCHEMA));
+  schema.properties.timeline.items.required = [];
+  const root = makeCompliantRepo({ schema });
+  const r = run(root);
+  assert.ok(r.errors.some((e) => e.includes('形状不对') && e.includes('$.timeline[]') && e.includes('required')), r.errors.join('\n'));
+});
+
+test('S5 契约里删掉 summary.required 时报错', () => {
+  const schema = JSON.parse(JSON.stringify(CANONICAL_SCHEMA));
+  delete schema.properties.summary.required;
+  const root = makeCompliantRepo({ schema });
+  const r = run(root);
+  assert.ok(r.errors.some((e) => e.includes('形状不对') && e.includes('$.summary') && e.includes('required')), r.errors.join('\n'));
+});
+
+test('S6 契约里删掉 case.pillars.required（嵌套两层）时报错', () => {
+  const schema = JSON.parse(JSON.stringify(CANONICAL_SCHEMA));
+  delete schema.properties.case.properties.pillars.required;
+  const root = makeCompliantRepo({ schema });
+  const r = run(root);
+  assert.ok(r.errors.some((e) => e.includes('形状不对') && e.includes('$.case.pillars') && e.includes('required')), r.errors.join('\n'));
+});
+
+test('S7 样例里 pattern 多一个嵌套多余键时报错', () => {
+  const sample = JSON.parse(JSON.stringify(CANONICAL_SAMPLE));
+  sample.pattern.extraKey = '不该出现';
+  const root = makeCompliantRepo({ sample });
+  const r = run(root);
+  assert.ok(r.errors.some((e) => e.includes('嵌套键集不对') && e.includes('$.pattern') && e.includes('多出 extraKey')), r.errors.join('\n'));
+});
+
+test('S8 样例里 timeline[0] 多一个嵌套多余键时报错', () => {
+  const sample = JSON.parse(JSON.stringify(CANONICAL_SAMPLE));
+  sample.timeline[0].note = '不该出现';
+  const root = makeCompliantRepo({ sample });
+  const r = run(root);
+  assert.ok(r.errors.some((e) => e.includes('嵌套键集不对') && e.includes('$.timeline[0]') && e.includes('多出 note')), r.errors.join('\n'));
+});
+
+// --- 做法 A 相对做法 B 多抓的那一类 ---
+
+test('properties 与 required 同时改名时也报错（做法 B 抓不住的那一类）', () => {
+  const schema = JSON.parse(JSON.stringify(CANONICAL_SCHEMA));
+  delete schema.properties.pattern.properties.storeHouse;
+  delete schema.properties.pattern.properties.shuCang;
+  schema.properties.pattern.properties.shuCang = { type: 'string' };
+  schema.properties.pattern.required = schema.properties.pattern.required.map((k) => (k === 'storeHouse' ? 'shuCang' : k));
+  const root = makeCompliantRepo({ schema });
+  const r = run(root);
+  assert.ok(r.errors.some((e) => e.includes('形状不对') && e.includes('$.pattern') && e.includes('storeHouse')), r.errors.join('\n'));
+});
+
+test('契约里多出一个规范之外的对象节点时报错', () => {
+  const schema = JSON.parse(JSON.stringify(CANONICAL_SCHEMA));
+  schema.properties.pattern.properties.extra = {
+    type: 'object',
+    required: ['a'],
+    properties: { a: { type: 'string' } },
+  };
+  const root = makeCompliantRepo({ schema });
+  const r = run(root);
+  assert.ok(r.errors.some((e) => e.includes('规范之外的对象节点') && e.includes('$.pattern.extra')), r.errors.join('\n'));
+});
+
+test('契约里对象节点整个被删掉时报错', () => {
+  const schema = JSON.parse(JSON.stringify(CANONICAL_SCHEMA));
+  delete schema.properties.transition;
+  const root = makeCompliantRepo({ schema });
+  const r = run(root);
+  assert.ok(r.errors.some((e) => e.includes('形状不对') && e.includes('$.transition')), r.errors.join('\n'));
+});
+
+// --- 样例那半的补充场景 ---
+
+test('样例缺一个嵌套键时报错，且不与「必填字段缺失」重复报', () => {
+  const sample = JSON.parse(JSON.stringify(CANONICAL_SAMPLE));
+  delete sample.pattern.verdict;
+  const root = makeCompliantRepo({ sample });
+  const r = run(root);
+  assert.ok(r.errors.some((e) => e.includes('嵌套键集不对') && e.includes('$.pattern') && e.includes('缺少 verdict')), r.errors.join('\n'));
+  assert.strictEqual(r.errors.filter((e) => e.includes('必填字段缺失')).length, 0, r.errors.join('\n'));
+});
+
+test('样例缺顶层键时只报一次（不重复报「必填字段缺失」）', () => {
+  const sample = JSON.parse(JSON.stringify(CANONICAL_SAMPLE));
+  delete sample.summary;
+  const root = makeCompliantRepo({ sample });
+  const r = run(root);
+  assert.strictEqual(r.errors.filter((e) => e.includes('缺少 summary')).length, 1, r.errors.join('\n'));
+  assert.strictEqual(r.errors.filter((e) => e.includes('必填字段缺失')).length, 0, r.errors.join('\n'));
+});
+
+test('样例里 playbooks[0] 多一个嵌套多余键时报错', () => {
+  const sample = JSON.parse(JSON.stringify(CANONICAL_SAMPLE));
+  sample.playbooks[0].extra = 1;
+  const root = makeCompliantRepo({ sample });
+  const r = run(root);
+  assert.ok(r.errors.some((e) => e.includes('嵌套键集不对') && e.includes('$.playbooks[0]') && e.includes('多出 extra')), r.errors.join('\n'));
+});
+
+test('样例里 timeline[0].liunianWindows[0] 多一个嵌套多余键时报错', () => {
+  const sample = JSON.parse(JSON.stringify(CANONICAL_SAMPLE));
+  sample.timeline[0].liunianWindows[0].extra = 1;
+  const root = makeCompliantRepo({ sample });
+  const r = run(root);
+  assert.ok(r.errors.some((e) => e.includes('嵌套键集不对') && e.includes('$.timeline[0].liunianWindows[0]') && e.includes('多出 extra')), r.errors.join('\n'));
+});
+

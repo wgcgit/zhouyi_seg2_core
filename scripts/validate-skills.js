@@ -106,8 +106,131 @@ const CONTRACT_ARRAY_MIN_ITEMS = [
   ['timeline'], ['timeline[]', 'liunianWindows'], ['summary', 'notes'],
 ];
 
-/** 允许为空、且**不得**声明 minItems >= 1 的数组路径（唯一豁免：xiJi.ciXi = 辅药） */
+/** 允许为空、且**不得**声明 minItems >= 1 的数组路径（唯一豁免：xiJi.ciXi = 次喜） */
 const CONTRACT_ARRAY_OPTIONAL = [['xiJi', 'ciXi']];
+
+/**
+ * 契约里 13 个对象节点的规范形状 —— 每个节点的「属性名集合」与「required 集合」。
+ *
+ * 权威来源：docs/superpowers/plans/2026-11-24-shiye-skill-plan.md 的 Task 2 契约 ```json 块
+ * （逐字抄，不凭记忆写）。路径写法沿用 resolveSchemaNode 的 'x[]' 约定（x[] = 数组 items）。
+ *
+ * 为什么要有它：Task 2 的产出**就是**这份契约，它是「契约 = 规范」这件事的唯一载体。
+ * 只断言顶层（required ⇄ properties 双向相等）的话，嵌套层那 ~40 个字段名与
+ * 全部嵌套 required 列表都是裸的 —— 契约能被静默削弱，而校验器一个字都不会说。
+ * 把 13 个对象节点的形状钉死之后，「删 required / 空 required / 字段改名 / 加野字段」
+ * 一律报红。
+ *
+ * 维护说明：契约要改形状时，**先**改计划文件 Task 2 的契约 json 块，**再**同步改这里 ——
+ * 两处必须一致，否则「契约 = 规范」就不成立了。测试文件里有一份独立副本
+ * （EXPECTED_OBJECT_SHAPE），两份不一致会直接测红。
+ */
+const CONTRACT_OBJECT_SHAPE = [
+  {
+    path: [],
+    properties: ['case', 'monthCommand', 'pattern', 'tiaoHou', 'xiJi', 'boundaries', 'playbooks', 'timeline', 'transition', 'summary'],
+    required: ['case', 'monthCommand', 'pattern', 'tiaoHou', 'xiJi', 'boundaries', 'playbooks', 'timeline', 'transition', 'summary'],
+  },
+  { path: ['case'], properties: ['gender', 'pillars'], required: ['gender', 'pillars'] },
+  { path: ['case', 'pillars'], properties: ['year', 'month', 'day', 'hour'], required: ['year', 'month', 'day', 'hour'] },
+  {
+    path: ['monthCommand'],
+    properties: ['monthBranch', 'dayMaster', 'seasonClimate', 'verdict'],
+    required: ['monthBranch', 'dayMaster', 'seasonClimate', 'verdict'],
+  },
+  { path: ['pattern'], properties: ['type', 'verdict', 'storeHouse', 'reasoning'], required: ['type', 'verdict', 'storeHouse', 'reasoning'] },
+  {
+    path: ['tiaoHou'],
+    properties: ['climateType', 'primaryDrug', 'secondaryDrug', 'drugStatus', 'drugReasoning', 'gap'],
+    required: ['climateType', 'primaryDrug', 'secondaryDrug', 'drugStatus', 'drugReasoning', 'gap'],
+  },
+  { path: ['xiJi'], properties: ['xi', 'ciXi', 'ji'], required: ['xi', 'ciXi', 'ji'] },
+  { path: ['boundaries[]'], properties: ['element', 'why', 'condition'], required: ['element', 'why', 'condition'] },
+  { path: ['playbooks[]'], properties: ['scale', 'condition', 'actions'], required: ['scale', 'condition', 'actions'] },
+  {
+    path: ['timeline[]'],
+    properties: ['ganZhi', 'type', 'verdict', 'mainTrack', 'playbook', 'liunianWindows'],
+    required: ['ganZhi', 'type', 'verdict', 'mainTrack', 'playbook', 'liunianWindows'],
+  },
+  {
+    path: ['timeline[]', 'liunianWindows[]'],
+    properties: ['year', 'signal', 'action'],
+    required: ['year', 'signal', 'action'],
+  },
+  { path: ['transition'], properties: ['risk', 'advice'], required: ['risk', 'advice'] },
+  { path: ['summary'], properties: ['strategy', 'notes'], required: ['strategy', 'notes'] },
+];
+
+/** 契约里一个对象节点的路径标签（'$' / '$.case.pillars' / '$.timeline[].liunianWindows[]'） */
+function shapeLabel(pathParts) {
+  if (!pathParts || pathParts.length === 0) return '$';
+  return '$' + pathParts.map((p) => '.' + p).join('');
+}
+
+/** 路径标签 → 常量条目 */
+const CONTRACT_SHAPE_BY_LABEL = new Map(CONTRACT_OBJECT_SHAPE.map((e) => [shapeLabel(e.path), e]));
+
+/**
+ * 递归收集契约里所有「有 properties 的对象节点」的路径标签。
+ * 数组的 items 层也算一个对象节点（标签带 '[]'）。
+ * 用来反向检查：契约里不得出现规范之外的对象节点。
+ */
+function collectObjectNodeLabels(node, label, out) {
+  if (!node || typeof node !== 'object') return out;
+  const props = node.properties;
+  if (!props || typeof props !== 'object') return out;
+  out.push(label);
+  for (const [key, sub] of Object.entries(props)) {
+    if (!sub || typeof sub !== 'object') continue;
+    if (sub.properties) collectObjectNodeLabels(sub, `${label}.${key}`, out);
+    if (sub.items && typeof sub.items === 'object' && sub.items.properties) {
+      collectObjectNodeLabels(sub.items, `${label}.${key}[]`, out);
+    }
+  }
+  return out;
+}
+
+/**
+ * 契约嵌套形状检查：13 个对象节点的属性集与 required 集必须与规范逐字相等，
+ * 且契约里不得多出规范之外的对象节点。
+ *
+ * 两条都做，缺一不可：
+ *   - 按常量逐个定位（能抓住「整个节点被删掉」）；
+ *   - 按契约反向遍历（能抓住「多出一个规范之外的对象节点」）。
+ *
+ * 返回是否全对（false 时已经报过错）。
+ */
+function checkContractObjectShape(errors, schema) {
+  let ok = true;
+  for (const spec of CONTRACT_OBJECT_SHAPE) {
+    const label = shapeLabel(spec.path);
+    const node = resolveSchemaNode(schema, spec.path);
+    if (!node || typeof node !== 'object' || !node.properties || typeof node.properties !== 'object') {
+      errors.push(`契约 schema 形状不对：${label} 缺少对象定义（应有 properties 与 required）`);
+      ok = false;
+      continue;
+    }
+    const actualProps = Object.keys(node.properties);
+    if (JSON.stringify(actualProps.slice().sort()) !== JSON.stringify(spec.properties.slice().sort())) {
+      errors.push(`契约 schema 形状不对：${label} 的属性集不对：应为 [${spec.properties.join(' / ')}]，实际 [${actualProps.join(' / ')}]`);
+      ok = false;
+    }
+    if (!Array.isArray(node.required) || node.required.length === 0) {
+      errors.push(`契约 schema 形状不对：${label} 缺少非空的 required 数组`);
+      ok = false;
+    } else if (JSON.stringify(node.required.slice().sort()) !== JSON.stringify(spec.required.slice().sort())) {
+      errors.push(`契约 schema 形状不对：${label} 的 required 集不对：应为 [${spec.required.join(' / ')}]，实际 [${node.required.join(' / ')}]`);
+      ok = false;
+    }
+  }
+  for (const label of collectObjectNodeLabels(schema, '$', [])) {
+    if (!CONTRACT_SHAPE_BY_LABEL.has(label)) {
+      errors.push(`契约 schema 形状不对：${label} 是规范之外的对象节点`);
+      ok = false;
+    }
+  }
+  return ok;
+}
 
 /**
  * 读基线清单。返回 { entries, malformed }：
@@ -465,6 +588,10 @@ function checkSchemaShape(errors, schema) {
     ok = false;
   }
 
+  // 嵌套形状：13 个对象节点的属性集 + required 集必须与规范逐字相等，
+  // 且不得多出规范之外的对象节点（顶层键集已对上了才跑，否则下面的报错全是噪音）
+  if (!checkContractObjectShape(errors, schema)) ok = false;
+
   // 8 个数组必须声明 minItems >= 1 —— 空数组的样例只覆盖了半边
   for (const spec of CONTRACT_ARRAY_MIN_ITEMS) {
     const label = spec.join('.');
@@ -492,7 +619,7 @@ function checkSchemaShape(errors, schema) {
       continue;
     }
     if (typeof node.minItems === 'number' && node.minItems >= 1) {
-      errors.push(`契约 schema 的数组不得声明 minItems >= 1：${label}（实际 ${node.minItems}）—— ciXi 是辅药，允许为空；声明 minItems>=1 会逼模型编造次喜`);
+      errors.push(`契约 schema 的数组不得声明 minItems >= 1：${label}（实际 ${node.minItems}）—— ciXi 是次喜（辅助用神，可选），允许为空；声明 minItems>=1 会逼模型编造次喜`);
       ok = false;
     }
   }
@@ -595,12 +722,17 @@ function checkSchemaSample(root, schema, errors) {
   // 样例的顶层键集必须恰好是规范那 10 个键：少一个 = 只覆盖了半边，
   // 多一个 = 契约管不住它（样例里有契约不认的东西，等于没人管）。
   // 这一条补上「多余顶层键能蒙混过关」那一半 —— 它是评审提的那半，schema-check.js 没有 additionalProperties。
+  //
+  // missingPaths 记下「已经报过的缺字段」的全路径，末尾用来把 checkValue 的
+  // 同一条「必填字段缺失」去掉（Minor 2：同一个问题不许报两条错）。
+  const missingPaths = new Set();
   if (sample && typeof sample === 'object' && !Array.isArray(sample)) {
     const sampleKeys = Object.keys(sample).sort();
     const wantedKeys = CONTRACT_TOP_LEVEL_KEYS.slice().sort();
     for (const k of wantedKeys) {
       if (!sampleKeys.includes(k)) {
         errors.push(`契约样例 docs/CAREER_SCHEMA.sample.json 顶层键集不对：缺少 ${k}`);
+        missingPaths.add(`$.${k}`);
       }
     }
     for (const k of sampleKeys) {
@@ -609,10 +741,61 @@ function checkSchemaSample(root, schema, errors) {
       }
     }
   }
+  // 嵌套层：每一级对象的键必须恰好是契约该节点定义的键。
+  // 「多」的那一半 schema-check.js 查不出来（它没有 additionalProperties），这里补上；
+  // 「少」的那一半由 checkValue 的「必填字段缺失」兜着 —— 契约的嵌套 required
+  // 已经被 checkContractObjectShape 钉死，所以那一半不会被削弱掉。
+  const schemaProps = (schema.properties && typeof schema.properties === 'object') ? schema.properties : {};
+  if (sample && typeof sample === 'object' && !Array.isArray(sample)) {
+    for (const [key, sub] of Object.entries(schemaProps)) {
+      if (Object.prototype.hasOwnProperty.call(sample, key)) {
+        checkSampleShape(errors, sub, sample[key], `$.${key}`, missingPaths);
+      }
+    }
+  }
   const sub = [];
   checkValue(sample, schema, '$', sub);
   for (const e of sub) {
+    // 同一个「缺字段」问题上面已经报过了 —— 别再报一遍（Minor 2）
+    const m = /^(.+): 必填字段缺失$/.exec(e);
+    if (m && missingPaths.has(m[1])) continue;
     errors.push(`契约样例 docs/CAREER_SCHEMA.sample.json 不符合契约: ${e}`);
+  }
+}
+
+/**
+ * 递归比对样例与契约的键集（每一级对象）。
+ * 路径标签与 schema-check.js 的路径写法一致（'$' / '$.case' / '$.timeline[0]'），
+ * 这样「缺字段」的路径能一一对上，重复报错才能被消掉。
+ */
+function checkSampleShape(errors, schemaNode, sampleNode, label, missingPaths) {
+  if (!schemaNode || typeof schemaNode !== 'object') return;
+  if (schemaNode.type === 'object' || schemaNode.properties) {
+    // 类型不对（不是对象）由 checkValue 报「期望 object」—— 这里不重复报
+    if (!sampleNode || typeof sampleNode !== 'object' || Array.isArray(sampleNode)) return;
+    const props = (schemaNode.properties && typeof schemaNode.properties === 'object') ? schemaNode.properties : {};
+    const propKeys = Object.keys(props);
+    for (const key of Object.keys(sampleNode)) {
+      if (!propKeys.includes(key)) {
+        errors.push(`契约样例 docs/CAREER_SCHEMA.sample.json 嵌套键集不对：${label} 多出 ${key}`);
+      }
+    }
+    for (const key of (Array.isArray(schemaNode.required) ? schemaNode.required : [])) {
+      if (!Object.prototype.hasOwnProperty.call(sampleNode, key)) {
+        errors.push(`契约样例 docs/CAREER_SCHEMA.sample.json 嵌套键集不对：${label} 缺少 ${key}`);
+        missingPaths.add(`${label}.${key}`);
+      }
+    }
+    for (const [key, sub] of Object.entries(props)) {
+      if (Object.prototype.hasOwnProperty.call(sampleNode, key)) {
+        checkSampleShape(errors, sub, sampleNode[key], `${label}.${key}`, missingPaths);
+      }
+    }
+    return;
+  }
+  if (schemaNode.type === 'array') {
+    if (!Array.isArray(sampleNode)) return;
+    sampleNode.forEach((item, i) => checkSampleShape(errors, schemaNode.items, item, `${label}[${i}]`, missingPaths));
   }
 }
 
@@ -719,7 +902,7 @@ module.exports = {
   run, baseline, NEW_SKILLS, REQUIRED_TERMS, MUTABLE_BASELINE,
   BASELINE_FILE_COUNT, BASELINE_COMMIT, CANDIDATE_FILES,
   CONTRACT_TOP_LEVEL_KEYS, CONTRACT_ENUMS, CONTRACT_ARRAY_MIN_ITEMS,
-  CONTRACT_ARRAY_OPTIONAL, REFERENCE_DIR, mentionsKey,
+  CONTRACT_ARRAY_OPTIONAL, CONTRACT_OBJECT_SHAPE, REFERENCE_DIR, mentionsKey,
 };
 
 if (require.main === module) {
