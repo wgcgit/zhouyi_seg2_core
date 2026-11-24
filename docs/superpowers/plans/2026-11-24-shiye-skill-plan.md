@@ -2398,7 +2398,7 @@ suiyun-shiye → `dayun-fenxi` + `xi-ji-quyong`。
 
 追加：
 
-```markdown
+````markdown
 ---
 
 ## 八、事业择业链（seg2）
@@ -2444,7 +2444,7 @@ suiyun-shiye → `dayun-fenxi` + `xi-ji-quyong`。
 4. 不要把「引动」等于「稳成」—— 命理只是时机参考，不是保证书
 
 详见 [CAREER_SCHEMA.md](../../../docs/CAREER_SCHEMA.md)
-```
+````
 
 - [ ] **Step 7: 跑校验 —— 确认基线 36 个文件仍逐字未动**
 
@@ -2469,6 +2469,8 @@ node scripts/validate-skills.js --expect-candidates
 Expected: 退出码 0，输出 `✓ 全部校验通过`（此时 5 个新 skill、契约、candidates 四份都已建好）
 
 再单独核对 36 个受保护文件：
+
+```bash
 node -e "
 const fs=require('fs'),path=require('path'),cp=require('child_process');
 const dir='skills/bazi-tuipan';
