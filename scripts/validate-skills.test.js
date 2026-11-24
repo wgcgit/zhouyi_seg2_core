@@ -89,7 +89,7 @@ const EXPECTED_OBJECT_SHAPE = [
 
 /**
  * 契约的规范形态 —— 这里就是「Task 2 必须落盘的东西」。
- * 与计划里的契约 json 块相比多了 9 处 minItems —— 那是本轮新增的硬性要求。
+ * 与计划 Task 2 的契约 json 块**逐字一致**（下面有一条测试直接读计划文件核对）。
  */
 const CANONICAL_SCHEMA = {
   "type": "object",
@@ -1906,5 +1906,235 @@ test('样例里 timeline[0].liunianWindows[0] 多一个嵌套多余键时报错'
   const root = makeCompliantRepo({ sample });
   const r = run(root);
   assert.ok(r.errors.some((e) => e.includes('嵌套键集不对') && e.includes('$.timeline[0].liunianWindows[0]') && e.includes('多出 extra')), r.errors.join('\n'));
+});
+
+// ===========================================================================
+// 第七轮（补丁）：N2 —— 「计划 json 块 ↔ 校验器常量 ↔ 测试副本」三处自动咬合
+//
+// 现状（补丁前）：测试只断言了「校验器常量 == 测试副本」（② == ③），
+// **没有任何一条测试读计划文件**（①）。改了计划里的契约 json 块而忘了改 ②③，
+// 测试不会红 —— 这正是实现者顾虑 ① 的实质。
+// 现在补上第三种断言：直接读计划文件，自己遍历一遍，跟 ② 逐节点比对。
+// ===========================================================================
+
+/** 计划文件路径 —— 契约形状的权威来源 */
+const PLAN_PATH = path.join(__dirname, '..', 'docs', 'superpowers', 'plans', '2026-11-24-shiye-skill-plan.md');
+
+/**
+ * 抠出计划里 Task 2 段的 ```json 块。
+ * Task 2 段里有 2 个 json 块：块 0 = 契约，块 1 = 基准样例。
+ *
+ * 抠不到（文件不存在 / 没有 Task 2 段 / json 块不足 2 个）时返回 null ——
+ * 调用方用 t.skip() 跳过而不是判红，避免在裁剪过的检出里误伤。
+ */
+function readPlanTask2JsonBlocks() {
+  if (!fs.existsSync(PLAN_PATH)) return null;
+  const text = fs.readFileSync(PLAN_PATH, 'utf8');
+  const start = text.indexOf('### Task 2:');
+  const end = text.indexOf('### Task 3:', start + 1);
+  if (start < 0 || end < 0) return null;
+  const section = text.slice(start, end);
+  const blocks = [];
+  const re = /```json[ \t]*\r?\n([\s\S]*?)\r?\n```/g;
+  let m;
+  while ((m = re.exec(section)) !== null) blocks.push(JSON.parse(m[1]));
+  return blocks.length >= 2 ? blocks : null;
+}
+
+/**
+ * 自己写的遍历：算出契约里所有「有 properties 的对象节点」的
+ * 路径 + 属性名集合 + required 集合。
+ *
+ * 刻意**不调用**校验器里的任何实现（collectObjectNodeLabels / resolveSchemaNode 都没碰）：
+ * 否则就是「用被测对象验证被测对象」，测不出「常量抄错了」这种事。
+ * 路径写法沿用 'x[]' = 数组 items 的约定。
+ */
+function collectObjectNodes(node, path, out) {
+  if (!node || typeof node !== 'object') return out;
+  const props = node.properties;
+  if (!props || typeof props !== 'object') return out;
+  out.push({
+    path: path.slice(),
+    properties: Object.keys(props).slice().sort(),
+    required: (Array.isArray(node.required) ? node.required : []).slice().sort(),
+  });
+  for (const [key, sub] of Object.entries(props)) {
+    if (!sub || typeof sub !== 'object') continue;
+    if (sub.properties) collectObjectNodes(sub, path.concat(key), out);
+    if (sub.items && typeof sub.items === 'object' && sub.items.properties) {
+      collectObjectNodes(sub.items, path.concat(`${key}[]`), out);
+    }
+  }
+  return out;
+}
+
+/** 路径数组 → 标签（自己写，不复用校验器的 shapeLabel） */
+function planShapeLabel(pathParts) {
+  return pathParts.length === 0 ? '$' : '$' + pathParts.map((p) => '.' + p).join('');
+}
+
+test('N2：计划 Task 2 的契约 json 块与校验器的形状常量逐节点一致', (t) => {
+  const blocks = readPlanTask2JsonBlocks();
+  if (!blocks) { t.skip('计划文件不存在或抠不出 Task 2 的两个 json 块'); return; }
+  const fromPlan = collectObjectNodes(blocks[0], [], []);
+  const fromConst = validate.CONTRACT_OBJECT_SHAPE.map((e) => ({
+    path: e.path.slice(),
+    properties: e.properties.slice().sort(),
+    required: e.required.slice().sort(),
+  }));
+  assert.strictEqual(fromPlan.length, fromConst.length,
+    `对象节点数不一致：计划 ${fromPlan.length} 个，校验器常量 ${fromConst.length} 个`);
+  const planMap = new Map(fromPlan.map((e) => [planShapeLabel(e.path), e]));
+  const constMap = new Map(fromConst.map((e) => [planShapeLabel(e.path), e]));
+  assert.deepStrictEqual([...planMap.keys()].sort(), [...constMap.keys()].sort(),
+    '对象节点的路径集合不一致');
+  for (const label of [...planMap.keys()].sort()) {
+    assert.deepStrictEqual(planMap.get(label).properties, constMap.get(label).properties,
+      `${label} 的属性集与计划不一致`);
+    assert.deepStrictEqual(planMap.get(label).required, constMap.get(label).required,
+      `${label} 的 required 集与计划不一致`);
+  }
+});
+
+test('N2：计划 Task 2 的契约 json 块与测试里的 CANONICAL_SCHEMA 副本一致', (t) => {
+  const blocks = readPlanTask2JsonBlocks();
+  if (!blocks) { t.skip('计划文件不存在或抠不出 Task 2 的两个 json 块'); return; }
+  assert.deepStrictEqual(blocks[0], CANONICAL_SCHEMA);
+});
+
+test('N2：计划 Task 2 的样例 json 块与测试里的 CANONICAL_SAMPLE 副本一致', (t) => {
+  const blocks = readPlanTask2JsonBlocks();
+  if (!blocks) { t.skip('计划文件不存在或抠不出 Task 2 的两个 json 块'); return; }
+  assert.deepStrictEqual(blocks[1], CANONICAL_SAMPLE);
+});
+
+// ===========================================================================
+// 第七轮（补丁）：N1 —— 每个属性叶子都必须声明 type
+//
+// 现状（补丁前）：形状常量钉的是「属性名集合 + required 集合」，
+// 叶子的 type 关键字不在其内 —— `type` 被删掉时静默通过（0 错）。
+// 本轮加一条通用规则兜底；**完整的叶子类型表（约 40 条）明确不做**，
+// 记为已知残留（见下面两条「已知残留」测试）。
+// ===========================================================================
+
+/** 契约里允许的 type 取值 —— 测试自己的真值来源 */
+const EXPECTED_LEAF_TYPES = ['string', 'integer', 'number', 'boolean', 'array', 'object'];
+
+/**
+ * 自己写的叶子遍历：找出所有「不是对象节点」的属性节点，外加数组的 items 层。
+ * 同样不调用校验器里的实现。
+ */
+function collectLeafNodes(node, label, out) {
+  const props = node && node.properties;
+  if (!props || typeof props !== 'object') return out;
+  for (const [key, sub] of Object.entries(props)) {
+    if (!sub || typeof sub !== 'object') continue;
+    const childLabel = label === '$' ? `$.${key}` : `${label}.${key}`;
+    if (sub.properties && typeof sub.properties === 'object') {
+      collectLeafNodes(sub, childLabel, out);
+      continue;
+    }
+    out.push({ label: childLabel, node: sub });
+    if (sub.items && typeof sub.items === 'object') {
+      out.push({ label: `${childLabel}[]`, node: sub.items });
+      collectLeafNodes(sub.items, `${childLabel}[]`, out);
+    }
+  }
+  return out;
+}
+
+test('N1：规范契约的每一个叶子都声明了合法的 type（自己遍历核对）', () => {
+  const leaves = collectLeafNodes(CANONICAL_SCHEMA, '$', []);
+  assert.ok(leaves.length > 0, '没找到任何叶子');
+  for (const { label, node } of leaves) {
+    assert.ok(Object.prototype.hasOwnProperty.call(node, 'type'), `${label} 没声明 type`);
+    assert.ok(EXPECTED_LEAF_TYPES.includes(node.type), `${label} 的 type 非法：${JSON.stringify(node.type)}`);
+  }
+});
+
+test('N1：校验器允许的 type 取值集合与规范一致', () => {
+  assert.deepStrictEqual(validate.CONTRACT_LEAF_TYPES.slice().sort(), EXPECTED_LEAF_TYPES.slice().sort());
+});
+
+test('N1：规范契约本身不报「必须声明 type」的错（零误报）', () => {
+  const root = makeCompliantRepo();
+  const r = run(root);
+  assert.ok(!r.errors.some((e) => e.includes('必须声明 type')), r.errors.join('\n'));
+  assert.ok(!r.errors.some((e) => e.includes('type 取值不合法')), r.errors.join('\n'));
+  assert.ok(!r.errors.some((e) => e.includes('必须声明 items')), r.errors.join('\n'));
+});
+
+test('N1：契约里叶子删掉 type 时报错（$.pattern.reasoning）', () => {
+  const schema = JSON.parse(JSON.stringify(CANONICAL_SCHEMA));
+  delete schema.properties.pattern.properties.reasoning.type;
+  const root = makeCompliantRepo({ schema });
+  const r = run(root);
+  assert.ok(
+    r.errors.some((e) => e.includes('必须声明 type') && e.includes('$.pattern.reasoning')),
+    r.errors.join('\n'),
+  );
+});
+
+test('N1：契约里数组的 items 删掉 type 时报错（$.xiJi.xi[]）', () => {
+  const schema = JSON.parse(JSON.stringify(CANONICAL_SCHEMA));
+  delete schema.properties.xiJi.properties.xi.items.type;
+  const root = makeCompliantRepo({ schema });
+  const r = run(root);
+  assert.ok(
+    r.errors.some((e) => e.includes('必须声明 type') && e.includes('$.xiJi.xi[]')),
+    r.errors.join('\n'),
+  );
+});
+
+test('N1：契约里叶子的 type 取值不合法时报错', () => {
+  const schema = JSON.parse(JSON.stringify(CANONICAL_SCHEMA));
+  schema.properties.pattern.properties.storeHouse.type = 'strng';
+  const root = makeCompliantRepo({ schema });
+  const r = run(root);
+  assert.ok(
+    r.errors.some((e) => e.includes('type 取值不合法') && e.includes('$.pattern.storeHouse')),
+    r.errors.join('\n'),
+  );
+});
+
+test('N1：契约里数组缺 items 时报错', () => {
+  const schema = JSON.parse(JSON.stringify(CANONICAL_SCHEMA));
+  delete schema.properties.xiJi.properties.xi.items;
+  const root = makeCompliantRepo({ schema });
+  const r = run(root);
+  assert.ok(
+    r.errors.some((e) => e.includes('必须声明 items') && e.includes('$.xiJi.xi')),
+    r.errors.join('\n'),
+  );
+});
+
+/**
+ * 已知残留 ①：叶子的**具体**标量类型未钉。
+ * 完整叶子类型表（约 40 条）明确不做 —— 那是第三处人工同步，代价大于收益。
+ * 所以把 `storeHouse` 的 type 从 string 改成 integer（样例同步改）**仍然是静默的**。
+ *
+ * 这条测试把这个残留钉成「已知」：将来若补了叶子类型表，这条要改成期望报红。
+ */
+test('N1 已知残留：叶子 type 由 string 改成 integer 仍然静默（完整叶子类型表明确不做）', () => {
+  const schema = JSON.parse(JSON.stringify(CANONICAL_SCHEMA));
+  schema.properties.pattern.properties.storeHouse.type = 'integer';
+  const sample = JSON.parse(JSON.stringify(CANONICAL_SAMPLE));
+  sample.pattern.storeHouse = 42;
+  const root = makeCompliantRepo({ schema, sample });
+  const r = run(root);
+  assert.deepStrictEqual(r.errors, [], r.errors.join('\n'));
+});
+
+/**
+ * 已知残留 ②：同上 —— 流年窗口的 `year` 由 integer 改成 string（样例同步改）仍然静默。
+ */
+test('N1 已知残留：叶子 type 由 integer 改成 string 仍然静默（完整叶子类型表明确不做）', () => {
+  const schema = JSON.parse(JSON.stringify(CANONICAL_SCHEMA));
+  schema.properties.timeline.items.properties.liunianWindows.items.properties.year.type = 'string';
+  const sample = JSON.parse(JSON.stringify(CANONICAL_SAMPLE));
+  sample.timeline[0].liunianWindows[0].year = '2030';
+  const root = makeCompliantRepo({ schema, sample });
+  const r = run(root);
+  assert.deepStrictEqual(r.errors, [], r.errors.join('\n'));
 });
 

@@ -124,6 +124,16 @@ const CONTRACT_ARRAY_OPTIONAL = [['xiJi', 'ciXi']];
  * 维护说明：契约要改形状时，**先**改计划文件 Task 2 的契约 json 块，**再**同步改这里 ——
  * 两处必须一致，否则「契约 = 规范」就不成立了。测试文件里有一份独立副本
  * （EXPECTED_OBJECT_SHAPE），两份不一致会直接测红。
+ * 现在还有第三条腿：测试里有一条测试**直接读计划文件**，把计划 json 块抠出来
+ * 自己遍历一遍，跟这里的常量逐节点比对 —— 三处（计划 / 常量 / 测试副本）自动咬合，
+ * 改了一处忘了另外两处，测试会红。
+ *
+ * **已知残留**：本轮钉的是**属性名集合**与 **required 集合**；
+ * 叶子的**具体标量类型**（string 还是 integer）**未钉** ——
+ * 例如把 `storeHouse` 的 type 从 string 改成 integer，形状断言一个字都不会说。
+ * 补一张约 40 条的叶子类型表能盖住，但那是第三处人工同步，代价大于收益，
+ * 明确不做，记为已知残留。本轮只加了一条通用规则兜底：
+ * 「每个属性叶子都必须声明 type，且 type 取值合法」（见 CONTRACT_LEAF_TYPES）。
  */
 const CONTRACT_OBJECT_SHAPE = [
   {
@@ -161,6 +171,12 @@ const CONTRACT_OBJECT_SHAPE = [
   { path: ['summary'], properties: ['strategy', 'notes'], required: ['strategy', 'notes'] },
 ];
 
+/**
+ * 契约里允许的 type 取值（JSON Schema 常用子集）。
+ * 只认这 6 个 —— 出现别的值（比如 "strng"）说明契约写坏了。
+ */
+const CONTRACT_LEAF_TYPES = ['string', 'integer', 'number', 'boolean', 'array', 'object'];
+
 /** 契约里一个对象节点的路径标签（'$' / '$.case.pillars' / '$.timeline[].liunianWindows[]'） */
 function shapeLabel(pathParts) {
   if (!pathParts || pathParts.length === 0) return '$';
@@ -174,6 +190,9 @@ const CONTRACT_SHAPE_BY_LABEL = new Map(CONTRACT_OBJECT_SHAPE.map((e) => [shapeL
  * 递归收集契约里所有「有 properties 的对象节点」的路径标签。
  * 数组的 items 层也算一个对象节点（标签带 '[]'）。
  * 用来反向检查：契约里不得出现规范之外的对象节点。
+ *
+ * 注意：这条反向检查是**冗余保险**，不是独立的一道防线 ——
+ * 正向的属性集断言已经能覆盖全部节点增删（见 checkContractObjectShape 的注释）。
  */
 function collectObjectNodeLabels(node, label, out) {
   if (!node || typeof node !== 'object') return out;
@@ -194,9 +213,15 @@ function collectObjectNodeLabels(node, label, out) {
  * 契约嵌套形状检查：13 个对象节点的属性集与 required 集必须与规范逐字相等，
  * 且契约里不得多出规范之外的对象节点。
  *
- * 两条都做，缺一不可：
- *   - 按常量逐个定位（能抓住「整个节点被删掉」）；
- *   - 按契约反向遍历（能抓住「多出一个规范之外的对象节点」）。
+ *   - **主腿**：按常量逐个定位 + 比对属性集 / required 集。
+ *     这一条已经能覆盖**全部**节点增删改：
+ *       · 新增一个野节点 —— 它必然要先挂到某个已被钉死的父节点的 properties 下，
+ *         父节点的「属性集不对」会先响；
+ *       · 整个节点被删 —— 按常量定位不到，报「缺少对象定义」；
+ *       · 改名 —— 属性集与 required 集都比不上。
+ *   - **冗余保险**：按契约反向遍历，找出「规范之外的对象节点」。
+ *     它**不是**独立的一道防线（主腿已经覆盖了节点增删），
+ *     它防的是将来有人放宽正向断言时无声退化。
  *
  * 返回是否全对（false 时已经报过错）。
  */
@@ -229,6 +254,71 @@ function checkContractObjectShape(errors, schema) {
       ok = false;
     }
   }
+  return ok;
+}
+
+/**
+ * 契约的叶子必须声明 type —— 且 type 取值合法；数组的 items 也必须有 type。
+ *
+ * 为什么要有它：形状常量钉的是「属性名集合 + required 集合」，
+ * **叶子的 type 关键字不在其内** —— 契约里把 `pattern.properties.reasoning` 的
+ * `type` 整个删掉、把 `xiJi.properties.xi.items` 的 `type` 删掉，
+ * 形状断言一个字都不会说（静默通过）。
+ *
+ * 本条只要求「声明了 type 且取值合法」，**不钉**「每个叶子具体是哪个标量类型」
+ * （string 还是 integer）—— 那要另加一张约 40 条的叶子类型表，
+ * 是第三处人工同步，代价大于收益，**明确不做**，记为已知残留。
+ *
+ * 「叶子」= 不带 properties 的属性节点（标量 / 数组）；
+ * 数组的 items 层单独要求声明 type（items 本身是对象节点时，
+ * 它下面的属性再按叶子规则递归检查）。
+ */
+function checkContractLeafTypes(errors, schema) {
+  let ok = true;
+  const allowed = new Set(CONTRACT_LEAF_TYPES);
+
+  function report(msg) {
+    errors.push(msg);
+    ok = false;
+  }
+
+  /** 检查一个节点的 type：必须声明，且取值必须在允许集合里 */
+  function checkType(node, label) {
+    if (!Object.prototype.hasOwnProperty.call(node, 'type')) {
+      report(`契约 schema 的属性必须声明 type：${label}（未声明 type）`);
+      return;
+    }
+    if (!allowed.has(node.type)) {
+      report(`契约 schema 的 type 取值不合法：${label}（实际 ${JSON.stringify(node.type)}，应为 ${CONTRACT_LEAF_TYPES.join(' / ')}）`);
+    }
+  }
+
+  /** 递归走属性；label 是给人看的路径（'$' / '$.timeline[].liunianWindows[]'） */
+  function visit(node, label) {
+    const props = node && node.properties;
+    if (!props || typeof props !== 'object') return;
+    for (const [key, sub] of Object.entries(props)) {
+      if (!sub || typeof sub !== 'object') continue;
+      const childLabel = label === '$' ? `$.${key}` : `${label}.${key}`;
+      const isObjectNode = Boolean(sub.properties && typeof sub.properties === 'object');
+      if (!isObjectNode) {
+        // 叶子（标量 / 数组）：必须声明 type
+        checkType(sub, childLabel);
+      }
+      // 数组的 items 也必须有 type
+      if (sub.type === 'array' || (sub.items && typeof sub.items === 'object')) {
+        if (!sub.items || typeof sub.items !== 'object') {
+          report(`契约 schema 的数组必须声明 items：${childLabel}`);
+        } else {
+          checkType(sub.items, `${childLabel}[]`);
+          visit(sub.items, `${childLabel}[]`);
+        }
+      }
+      if (isObjectNode) visit(sub, childLabel);
+    }
+  }
+
+  visit(schema, '$');
   return ok;
 }
 
@@ -592,6 +682,10 @@ function checkSchemaShape(errors, schema) {
   // 且不得多出规范之外的对象节点（顶层键集已对上了才跑，否则下面的报错全是噪音）
   if (!checkContractObjectShape(errors, schema)) ok = false;
 
+  // 每个属性叶子都必须声明 type（数组的 items 也必须有）——
+  // 形状常量只钉属性名与 required，叶子的 type 关键字被删掉时它是静默的
+  if (!checkContractLeafTypes(errors, schema)) ok = false;
+
   // 8 个数组必须声明 minItems >= 1 —— 空数组的样例只覆盖了半边
   for (const spec of CONTRACT_ARRAY_MIN_ITEMS) {
     const label = spec.join('.');
@@ -902,7 +996,7 @@ module.exports = {
   run, baseline, NEW_SKILLS, REQUIRED_TERMS, MUTABLE_BASELINE,
   BASELINE_FILE_COUNT, BASELINE_COMMIT, CANDIDATE_FILES,
   CONTRACT_TOP_LEVEL_KEYS, CONTRACT_ENUMS, CONTRACT_ARRAY_MIN_ITEMS,
-  CONTRACT_ARRAY_OPTIONAL, CONTRACT_OBJECT_SHAPE, REFERENCE_DIR, mentionsKey,
+  CONTRACT_ARRAY_OPTIONAL, CONTRACT_OBJECT_SHAPE, CONTRACT_LEAF_TYPES, REFERENCE_DIR, mentionsKey,
 };
 
 if (require.main === module) {
