@@ -17,6 +17,10 @@
 - **`test-prompts.json` 字段**：`id` / `prompt` / `expected_skill` / `should_fire` / `category` / `note`，六项齐全，`id` 在文件内唯一。
 - **闭合枚举**：JSON 契约里 `climateType`、`drugStatus`、`pattern.verdict`、`timeline.verdict`、`scale`、`type`、`action`、`strategy` 均为闭合集合，取值见 Task 2。
 - **JSON 契约顶层 10 个键**：`case`、`monthCommand`、`pattern`、`tiaoHou`、`xiJi`、`boundaries`、`playbooks`、`timeline`、`transition`、`summary`。
+  这 10 个键名与 8 组枚举的取值**必须由 `scripts/validate-skills.js` 里的常量钉住并断言** ——
+  契约 md 与校验器任一方写错都必须报错，不能靠「文档里写着」当约束。
+  两处 `verdict` 的枚举**不可混用**：`pattern.verdict` ∈ {成格, 破格, 不清}，
+  `timeline[].verdict` ∈ {重仓, 轻试, 守成}。
 - **提交信息用中文**，格式 `<type>: <简述>`，type 取 `feat` / `fix` / `docs` / `chore` / `test`。
 
 ## File Structure
@@ -26,6 +30,7 @@ zhouyi_seg2/
 ├── 参考资料/                                  # 已提交，5 份原始 txt，不得修改
 ├── docs/
 │   ├── CAREER_SCHEMA.md                       # Task 2 新建：JSON 契约（人读 + 机读）
+│   ├── CAREER_SCHEMA.sample.json              # Task 2 新建：基准样例输出（契约的持久断言对象）
 │   └── superpowers/
 │       ├── specs/2026-11-24-shiye-skill-design.md   # 已提交
 │       └── plans/2026-11-24-shiye-skill-plan.md      # 本文件
@@ -671,10 +676,14 @@ git commit -m "test: 加校验工具链 —— skill 结构 / 契约 / 基线完
 
 **Files:**
 - Create: `docs/CAREER_SCHEMA.md`
+- Create: `docs/CAREER_SCHEMA.sample.json`
 
 **Interfaces:**
-- Consumes: Task 1 的 `readSchema()`（从 md 的 ```json 块解析）、`checkValue()`
-- Produces: `docs/CAREER_SCHEMA.md`，其 ```json 块是契约的机读形式，顶层 `required` 数组即 10 个顶层键名
+- Consumes: Task 1 的 `readSchema()`（从 md 的 ```json 块解析）、`checkValue()`、
+  `validate-skills.js` 的「契约样例校验」路径（`docs/CAREER_SCHEMA.sample.json` 存在即按 schema 校验）
+- Produces: `docs/CAREER_SCHEMA.md`，其 ```json 块是契约的机读形式，顶层 `required` 数组即 10 个顶层键名；
+  `docs/CAREER_SCHEMA.sample.json` 是基准样例输出（戊辰 己未 乙亥 乙酉 男命），
+  供 `checkValue` 持久断言「契约能校验一份真实输出」—— 每次 `npm test` 都会跑。
 
 - [ ] **Step 1: 写 `docs/CAREER_SCHEMA.md`**
 
@@ -860,51 +869,63 @@ node scripts/validate-skills.js
 是否点名了上面每一个顶层键。
 ````
 
-- [ ] **Step 2: 验证契约能被解析且能校验一份样例输出**
+- [ ] **Step 2: 写基准样例 `docs/CAREER_SCHEMA.sample.json`**
 
-临时写一个一次性脚本 `scripts/tmp-schema-smoke.js`（**验证完即删**）：
+这份样例是**契约的持久断言对象** —— 校验器每次跑都会用 `checkValue` 按 schema 校验它。
+所以它不是一次性脚本里的临时数据，而是一个入库的基准用例：戊辰 己未 乙亥 乙酉 男命
+（来自 `参考资料/事业推理结果.txt`，设计规格 §7 要求的「基准用例可被复现」）。
 
-```js
-'use strict';
-const fs = require('fs');
-const path = require('path');
-const { checkValue } = require('./lib/schema-check');
-
-const md = fs.readFileSync(path.join(__dirname, '..', 'docs', 'CAREER_SCHEMA.md'), 'utf8');
-const schema = JSON.parse(/```json\s*\n([\s\S]*?)\n```/.exec(md)[1]);
-
-const good = {
-  case: { gender: '男', pillars: { year: '戊辰', month: '己未', day: '乙亥', hour: '乙酉' } },
-  monthCommand: { monthBranch: '未', dayMaster: '乙木', seasonClimate: '季夏燥土', verdict: '财星当令，财多身难独担' },
-  pattern: { type: '财格', verdict: '成格', storeHouse: '辰为水库，未为燥土财库，双库夹局', reasoning: '财库厚而闭' },
-  tiaoHou: { climateType: '燥热局', primaryDrug: '癸水', secondaryDrug: '丙火', drugStatus: '藏药', drugReasoning: '亥藏壬水有润根，戊己厚土克水', gap: '原局无丙透，缺阳光泄秀通关' },
-  xiJi: { xi: ['水（印）', '木（比劫）'], ciXi: ['丙火'], ji: ['叠土', '叠金'] },
-  boundaries: [{ element: '土金赛道', why: '财重压身、杀重克身', condition: '须有水木通关，方可轻碰' }],
-  playbooks: [{ scale: '轻创业', condition: '水印流通之年', actions: ['咨询工作室', '独立方案团队'] }],
-  timeline: [{ ganZhi: '亥子', type: '水运', verdict: '重仓', mainTrack: '深耕专业、铺底盘', playbook: '早期', liunianWindows: [{ year: 2030, signal: '透出调候用神', action: '宜' }] }],
-  transition: { risk: '藤萝根基未稳，见财心动、盲目重仓', advice: '交运前后一两年不新开长线重资产盘' },
-  summary: { strategy: '底盘待机', notes: ['喜水木，忌叠土叠金'] },
-};
-
-const errors = [];
-checkValue(good, schema, '$', errors);
-if (errors.length) {
-  console.error('契约校验未通过：');
-  errors.forEach((e) => console.error('  - ' + e));
-  process.exit(1);
+```json
+{
+  "case": { "gender": "男", "pillars": { "year": "戊辰", "month": "己未", "day": "乙亥", "hour": "乙酉" } },
+  "monthCommand": { "monthBranch": "未", "dayMaster": "乙木", "seasonClimate": "季夏燥土", "verdict": "财星当令，财多身难独担" },
+  "pattern": { "type": "财格", "verdict": "成格", "storeHouse": "辰为水库，未为燥土财库，双库夹局", "reasoning": "财库厚而闭" },
+  "tiaoHou": { "climateType": "燥热局", "primaryDrug": "癸水", "secondaryDrug": "丙火", "drugStatus": "藏药", "drugReasoning": "亥藏壬水有润根，戊己厚土克水", "gap": "原局无丙透，缺阳光泄秀通关" },
+  "xiJi": { "xi": ["水（印）", "木（比劫）"], "ciXi": ["丙火"], "ji": ["叠土", "叠金"] },
+  "boundaries": [{ "element": "土金赛道", "why": "财重压身、杀重克身", "condition": "须有水木通关，方可轻碰" }],
+  "playbooks": [{ "scale": "轻创业", "condition": "水印流通之年", "actions": ["咨询工作室", "独立方案团队"] }],
+  "timeline": [{ "ganZhi": "亥子", "type": "水运", "verdict": "重仓", "mainTrack": "深耕专业、铺底盘", "playbook": "早期", "liunianWindows": [{ "year": 2030, "signal": "透出调候用神", "action": "宜" }] }],
+  "transition": { "risk": "藤萝根基未稳，见财心动、盲目重仓", "advice": "交运前后一两年不新开长线重资产盘" },
+  "summary": { "strategy": "底盘待机", "notes": ["喜水木，忌叠土叠金"] }
 }
-console.log('契约校验通过：样例输出符合 CAREER_SCHEMA');
 ```
 
-Run: `node scripts/tmp-schema-smoke.js`
-Expected: 输出 `契约校验通过：样例输出符合 CAREER_SCHEMA`
+- [ ] **Step 3: 跑校验，确认契约与样例都被认可**
 
-- [ ] **Step 3: 反向验证 —— 故意造一个非法值，确认校验器能拦住**
+```bash
+cd D:/Software/ClaudeCodeProject/zhouyi_seg2
+node scripts/validate-skills.js
+```
 
-把 `good.pattern.verdict` 改成 `'格局很好'`，重跑：
+Expected:
+- **不再报** `缺少 docs/CAREER_SCHEMA.md`
+- **不报**任何 `契约样例 docs/CAREER_SCHEMA.sample.json ...` 的错 —— 说明样例按契约校验通过
+- 仍报 5 个新 skill 缺失（`tiaohou-shiye` / `geshi-shiye` / `wuxing-shiye` / `suiyun-shiye` / `shiye-master`）——
+  这是**正常的**，它们由 Task 3–7 建
+- **零基线报错**
 
-Run: `node scripts/tmp-schema-smoke.js`
-Expected: 退出码 1，输出 `$.pattern.verdict: 值 "格局很好" 不在枚举 [成格 / 破格 / 不清] 内`
+若出现 `契约样例 ... 不符合契约: ...`，说明 Step 2 的样例与 Step 1 的 schema 对不上，
+按报错逐条改样例（不要改 schema 去迁就样例）。
+
+- [ ] **Step 4: 反向验证 —— 故意造一个非法值，确认校验器能拦住**
+
+临时把样例里 `pattern.verdict` 改成 `'格局很好'`：
+
+```bash
+cd D:/Software/ClaudeCodeProject/zhouyi_seg2
+node scripts/validate-skills.js
+```
+
+Expected: 退出码 1，输出 `契约样例 docs/CAREER_SCHEMA.sample.json 不符合契约: $.pattern.verdict: 值 "格局很好" 不在枚举 [成格 / 破格 / 不清] 内`
+
+确认拦住后，**改回 `"成格"`**（不要用 git checkout —— 样例是本任务新建的、未入库）：
+
+```bash
+cd D:/Software/ClaudeCodeProject/zhouyi_seg2
+node scripts/validate-skills.js
+```
+
+Expected: 退出码 1，但**不再有** `契约样例` 相关的错（其余 5 个新 skill 缺失的错仍在）
 
 确认拦住后，**删除临时脚本**：
 
@@ -2502,4 +2523,4 @@ echo "--- 新增文件数（相对基线提交 f7bd915）---"
 git diff --name-status f7bd915 HEAD | grep -c '^A'
 ```
 
-Expected: 提交历史连贯，基线提交 `f7bd915` 在最下面，新增文件数 ≥ 16（5 skill 定义 + 5 test-prompts + 4 candidates + CAREER_SCHEMA + 5 scripts + package.json + baseline-manifest）
+Expected: 提交历史连贯，基线提交 `f7bd915` 在最下面，新增文件数 ≥ 17（5 skill 定义 + 5 test-prompts + 4 candidates + CAREER_SCHEMA + CAREER_SCHEMA.sample.json + 5 scripts + package.json + baseline-manifest）
