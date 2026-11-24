@@ -35,6 +35,13 @@ const MUTABLE_BASELINE = new Set([
 const MANIFEST_NAME = '.baseline-manifest.txt';
 const SKILL_DIR = path.join('skills', 'bazi-tuipan');
 
+/**
+ * 参考资料目录 —— 5 份原始素材，基线提交里就有，一字未改。
+ * 它们**不在** .baseline-manifest.txt 里（清单只管 skills/bazi-tuipan/），
+ * 所以要有独立的一条腿：拿基线提交里的 blob 跟工作区比。
+ */
+const REFERENCE_DIR = '参考资料';
+
 /** git 里用的正斜杠路径（Windows 上 path.join 给的是反斜杠，git 不认） */
 function gitPath(p) {
   return p.split(path.sep).join('/');
@@ -81,6 +88,18 @@ const CONTRACT_ENUMS = [
 ];
 
 /**
+ * 契约里必须声明 minItems >= 1 的 9 个数组路径。
+ * 空数组 = 「只覆盖了半边」的样例（playbooks: [] / summary.notes: [] 都能蒙混过关），
+ * 所以契约必须自己声明这些数组至少 1 项。schema-check.js 认 minItems（样例那条腿查得出来），
+ * 这里只补一句「契约有没有声明 minItems」的断言，不用改 scripts/lib/。
+ */
+const CONTRACT_ARRAY_MIN_ITEMS = [
+  ['xiJi', 'xi'], ['xiJi', 'ciXi'], ['xiJi', 'ji'],
+  ['boundaries'], ['playbooks'], ['playbooks[]', 'actions'],
+  ['timeline'], ['timeline[]', 'liunianWindows'], ['summary', 'notes'],
+];
+
+/**
  * 读基线清单。返回 { entries, malformed }：
  * malformed 是既不像注释、也不像「<sha1>  <路径>」的行 —— 清单被写坏/合并冲突截断的痕迹。
  */
@@ -100,40 +119,94 @@ function readManifest(dir) {
 }
 
 /**
- * 读基线提交里的文件树（路径 → blob sha）。
+ * 读基线提交里的文件树（路径 → blob sha，路径相对仓库根）。
  * 必须带 `-c core.quotepath=false`：否则 git 会把中文文件名转义成八进制，
  * 路径就跟清单里的原文对不上。用 -z 做 NUL 分隔，避免引号转义。
  * 提交不存在时返回 { error }（绝不静默跳过 —— 那等于把锚点关掉）。
+ *
+ * 读的是**整棵树**（不给 pathspec）：清单要比 skills/bazi-tuipan/ 子树，
+ * 参考资料要比 参考资料/ 子树，一次读全树省得开两个 git 进程。
  */
 function readBaselineTree(root, commit) {
   let out;
   try {
     out = execFileSync('git', [
-      '-c', 'core.quotepath=false', 'ls-tree', '-r', '-z', commit, '--', gitPath(SKILL_DIR),
+      '-c', 'core.quotepath=false', 'ls-tree', '-r', '-z', commit,
     ], { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
   } catch (e) {
     return { error: e };
   }
-  const prefix = `${gitPath(SKILL_DIR)}/`;
   const tree = new Map();
   for (const rec of out.split('\0')) {
     if (!rec) continue;
     const m = /^(\d+) (\w+) ([0-9a-f]{40})\t(.*)$/.exec(rec);
     if (!m || m[2] !== 'blob') continue;
-    let p = m[4];
-    if (p.startsWith(prefix)) p = p.slice(prefix.length);
-    tree.set(p, m[3]);
+    tree.set(m[4], m[3]);
   }
   return { tree };
+}
+
+/** 从整棵树里切出某个前缀的子树（键变成相对该前缀的路径） */
+function subtree(tree, prefix) {
+  const p = `${prefix}/`;
+  const out = new Map();
+  for (const [k, v] of tree) if (k.startsWith(p)) out.set(k.slice(p.length), v);
+  return out;
+}
+
+/**
+ * 参考资料的不可变性：基线提交里的每一份，都必须还在工作区、且 blob 未变。
+ * 这是一条**独立于基线清单**的腿 —— 参考资料不在清单里，清单被改也管不到它。
+ * 报错必须指出是哪个文件。
+ */
+function checkReferenceFiles(root, tree, commit) {
+  const problems = [];
+  const prefix = `${REFERENCE_DIR}/`;
+  const refs = [...tree.entries()].filter(([p]) => p.startsWith(prefix)).sort();
+  if (refs.length === 0) {
+    problems.push(`基线提交 ${commit} 里没有 ${prefix} —— 参考资料的不可变性无法被断言`);
+    return problems;
+  }
+  const existing = [];
+  for (const [p, sha] of refs) {
+    const full = path.join(root, ...p.split('/'));
+    if (!fs.existsSync(full)) {
+      problems.push(`参考资料丢失: ${p}`);
+      continue;
+    }
+    existing.push({ p, sha });
+  }
+  if (existing.length === 0) return problems;
+  let out;
+  try {
+    out = execFileSync('git', ['hash-object', '--stdin-paths'], {
+      cwd: root,
+      encoding: 'utf8',
+      input: existing.map((e) => e.p).join('\n') + '\n',
+    });
+  } catch (e) {
+    problems.push(`无法执行 git hash-object 比对参考资料 —— ${e.message}`);
+    return problems;
+  }
+  const hashes = out.split('\n').map((s) => s.trim()).filter(Boolean);
+  if (hashes.length !== existing.length) {
+    problems.push(`参考资料 blob 比对条数不符（期望 ${existing.length} 条，实际 ${hashes.length} 条）`);
+    return problems;
+  }
+  existing.forEach((e, i) => {
+    if (hashes[i] !== e.sha) problems.push(`参考资料被改动: ${e.p}`);
+  });
+  return problems;
 }
 
 /**
  * 比对基线文件 blob，返回不一致清单。
  * 用 `git hash-object` 比 blob（会应用 clean filter 归一化 CRLF），不看工作区内容。
  *
- * 两条腿：
+ * 三条腿：
  *   1. 锚定：清单必须与基线提交的树逐条一致（路径集合 + blob sha 集合双向相等）；
- *   2. 工作区：清单里的每个文件都必须还在，且（不可变的那 36 个）blob 未变。
+ *   2. 工作区：清单里的每个文件都必须还在，且（不可变的那 36 个）blob 未变；
+ *   3. 参考资料：基线提交里的每一份参考资料都必须还在，且 blob 未变（它不在清单里）。
  */
 function baseline(root, opts = {}) {
   const dir = path.join(root, SKILL_DIR);
@@ -170,7 +243,7 @@ function baseline(root, opts = {}) {
     const detail = anchor.error.stderr ? String(anchor.error.stderr).trim().split('\n')[0] : anchor.error.message;
     problems.push(`找不到基线提交 ${commit} —— 基线清单无法被锚定（${detail}）`);
   } else {
-    const tree = anchor.tree;
+    const tree = subtree(anchor.tree, gitPath(SKILL_DIR));
     const man = new Map(entries.map((e) => [e.file, e.sha]));
     const onlyTree = [...tree.keys()].filter((p) => !man.has(p)).sort();
     const onlyMan = [...man.keys()].filter((p) => !tree.has(p)).sort();
@@ -180,6 +253,8 @@ function baseline(root, opts = {}) {
     for (const p of shaDiff) {
       problems.push(`基线清单与基线提交不一致（基线提交 ${commit}）：${p} 的 blob sha 不符（清单 ${man.get(p).slice(0, 8)} ≠ 基线 ${tree.get(p).slice(0, 8)}）`);
     }
+    // 参考资料：独立的一条腿（它不在基线清单里，清单被改也管不到它）
+    problems.push(...checkReferenceFiles(root, anchor.tree, commit));
   }
 
   // 存在性检查对全部条目都做（含那 6 个可变顶层文档）。
@@ -378,6 +453,22 @@ function checkSchemaShape(errors, schema) {
   if (JSON.stringify(required) !== JSON.stringify(CONTRACT_TOP_LEVEL_KEYS)) {
     errors.push(`契约 schema 顶层键顺序不对：应为 [${CONTRACT_TOP_LEVEL_KEYS.join(' / ')}]，实际 [${required.join(' / ')}]`);
     ok = false;
+  }
+
+  // 9 个数组必须声明 minItems >= 1 —— 空数组的样例只覆盖了半边
+  for (const spec of CONTRACT_ARRAY_MIN_ITEMS) {
+    const label = spec.join('.');
+    const node = resolveSchemaNode(schema, spec);
+    if (!node || node.type !== 'array') {
+      errors.push(`契约 schema 缺少数组定义：${label}`);
+      ok = false;
+      continue;
+    }
+    if (!(typeof node.minItems === 'number' && node.minItems >= 1)) {
+      const actual = node.minItems === undefined ? '未声明' : node.minItems;
+      errors.push(`契约 schema 的数组必须声明 minItems >= 1：${label}（实际 ${actual}）`);
+      ok = false;
+    }
   }
 
   // 8 组闭合枚举必须与规范完全一致（两处 verdict 的枚举各自独立，不可混用）
@@ -584,7 +675,8 @@ function run(root, opts = {}) {
 module.exports = {
   run, baseline, NEW_SKILLS, REQUIRED_TERMS, MUTABLE_BASELINE,
   BASELINE_FILE_COUNT, BASELINE_COMMIT, CANDIDATE_FILES,
-  CONTRACT_TOP_LEVEL_KEYS, CONTRACT_ENUMS, mentionsKey,
+  CONTRACT_TOP_LEVEL_KEYS, CONTRACT_ENUMS, CONTRACT_ARRAY_MIN_ITEMS,
+  REFERENCE_DIR, mentionsKey,
 };
 
 if (require.main === module) {
@@ -593,8 +685,12 @@ if (require.main === module) {
   if (process.argv.includes('--expect-candidates') || process.env.SEG2_EXPECT_CANDIDATES === '1') {
     opts.expectCandidates = true;
   }
-  if (process.env.SEG2_BASELINE_COMMIT) opts.baselineCommit = process.env.SEG2_BASELINE_COMMIT;
-  const result = run(ROOT, opts);
+  // 锚点不再能被任何环境变量换掉：唯一的锚是 BASELINE_COMMIT，
+  // 换锚点只能走函数参数 run(root, { baselineCommit })（测试专用）。
+  // 可选的位置参数 = 要校验的仓库根（测试用：让端到端测试能指向一个被篡改的临时克隆）。
+  // 它只决定「校验哪棵树」，不决定「锚在哪」—— 锚永远固定为 BASELINE_COMMIT。
+  const rootArg = process.argv.slice(2).find((a) => !a.startsWith('-'));
+  const result = run(rootArg ? path.resolve(rootArg) : ROOT, opts);
   if (result.ok) {
     console.log('✓ 全部校验通过');
   } else {

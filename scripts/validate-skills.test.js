@@ -5,7 +5,7 @@ const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { execFileSync } = require('child_process');
+const { execFileSync, spawnSync } = require('child_process');
 const validate = require('./validate-skills');
 
 // ---------------------------------------------------------------------------
@@ -31,6 +31,21 @@ const EXPECTED_ENUMS = [
 
 const EXPECTED_BASELINE_COUNT = 42;
 
+/**
+ * 契约里必须声明 minItems >= 1 的 9 个数组路径。
+ * 空数组 = 「只覆盖了半边」的样例（playbooks: [] / summary.notes: [] 都能蒙混过关），
+ * 所以契约必须自己声明这些数组至少 1 项。
+ */
+const EXPECTED_MIN_ITEMS_PATHS = [
+  ['xiJi', 'xi'], ['xiJi', 'ciXi'], ['xiJi', 'ji'],
+  ['boundaries'], ['playbooks'], ['playbooks[]', 'actions'],
+  ['timeline'], ['timeline[]', 'liunianWindows'], ['summary', 'notes'],
+];
+
+/**
+ * 契约的规范形态 —— 这里就是「Task 2 必须落盘的东西」。
+ * 与计划里的契约 json 块相比多了 9 处 minItems —— 那是本轮新增的硬性要求。
+ */
 const CANONICAL_SCHEMA = {
   "type": "object",
   "required": [
@@ -186,18 +201,21 @@ const CANONICAL_SCHEMA = {
       "properties": {
         "xi": {
           "type": "array",
+          "minItems": 1,
           "items": {
             "type": "string"
           }
         },
         "ciXi": {
           "type": "array",
+          "minItems": 1,
           "items": {
             "type": "string"
           }
         },
         "ji": {
           "type": "array",
+          "minItems": 1,
           "items": {
             "type": "string"
           }
@@ -206,6 +224,7 @@ const CANONICAL_SCHEMA = {
     },
     "boundaries": {
       "type": "array",
+      "minItems": 1,
       "items": {
         "type": "object",
         "required": [
@@ -228,6 +247,7 @@ const CANONICAL_SCHEMA = {
     },
     "playbooks": {
       "type": "array",
+      "minItems": 1,
       "items": {
         "type": "object",
         "required": [
@@ -250,6 +270,7 @@ const CANONICAL_SCHEMA = {
           },
           "actions": {
             "type": "array",
+            "minItems": 1,
             "items": {
               "type": "string"
             }
@@ -259,6 +280,7 @@ const CANONICAL_SCHEMA = {
     },
     "timeline": {
       "type": "array",
+      "minItems": 1,
       "items": {
         "type": "object",
         "required": [
@@ -299,6 +321,7 @@ const CANONICAL_SCHEMA = {
           },
           "liunianWindows": {
             "type": "array",
+            "minItems": 1,
             "items": {
               "type": "object",
               "required": [
@@ -358,6 +381,7 @@ const CANONICAL_SCHEMA = {
         },
         "notes": {
           "type": "array",
+          "minItems": 1,
           "items": {
             "type": "string"
           }
@@ -480,9 +504,12 @@ function makeRepo(skillFiles = {}, opts = {}) {
   }
   gitInit(root);
   const names = writeBaselinePlaceholders(root, opts.baselineCount === undefined ? EXPECTED_BASELINE_COUNT : opts.baselineCount);
+  // 参考资料的 5 份原始素材也要进基线提交 —— 它们不在基线清单里，
+  // 但「一字未改」是硬约束，校验器用基线提交单独给它们一条腿断言。
+  const refNames = writeReferencePlaceholders(root);
   // 只把这 42 个占位文件放进这次提交
   // （stderr 丢掉：core.autocrlf=true 会让 git 对每个文件打一行 CRLF 警告，噪音太大）
-  execFileSync('git', ['add', '--', ...names.map((n) => `skills/bazi-tuipan/${n}`)], { cwd: root, stdio: ['ignore', 'ignore', 'ignore'] });
+  execFileSync('git', ['add', '--', ...names.map((n) => `skills/bazi-tuipan/${n}`), ...refNames], { cwd: root, stdio: ['ignore', 'ignore', 'ignore'] });
   execFileSync('git', ['-c', 'user.email=t@example.com', '-c', 'user.name=测试', 'commit', '-q', '-m', 'baseline'], { cwd: root });
   BASELINE_COMMITS.set(root, execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim());
   if (!opts.noManifest) {
@@ -544,6 +571,20 @@ function writeBaselinePlaceholders(root, count = EXPECTED_BASELINE_COUNT) {
     const name = `base-${n}.md`;
     fs.writeFileSync(path.join(root, 'skills', 'bazi-tuipan', name), `基线占位 ${n}\n`);
     names.push(name);
+  }
+  return names;
+}
+
+/** 参考资料的 5 份原始素材（和真实仓库同名）—— 进基线提交，供锚点单独断言 */
+const REFERENCE_FILES = ['事业1.txt', '事业2.txt', '事业3.txt', '事业4.txt', '事业推理结果.txt'];
+
+function writeReferencePlaceholders(root) {
+  const names = [];
+  for (const n of REFERENCE_FILES) {
+    const rel = `参考资料/${n}`;
+    fs.mkdirSync(path.join(root, '参考资料'), { recursive: true });
+    fs.writeFileSync(path.join(root, ...rel.split('/')), `参考资料占位 ${n}\n`);
+    names.push(rel);
   }
   return names;
 }
@@ -1391,4 +1432,186 @@ test('master 缺 Execution 段时不报「正文为空」也不报「未点名�
   // 同一个缺陷只报一次
   assert.strictEqual(r.errors.filter((e) => e.includes('shiye-master: 缺少 ## Execution')).length, 1, r.errors.join('\n'));
   assert.strictEqual(r.errors.filter((e) => e.startsWith('shiye-master:')).length, 1, r.errors.join('\n'));
+});
+
+// ===========================================================================
+// 第四轮：Important 1 —— 锚点不可被环境变量绕过
+// ===========================================================================
+
+/**
+ * 校验器源码里不允许再有「从环境变量换锚点」的开关。
+ * 断言两件事：
+ *   1. 不读 SEG2_BASELINE_COMMIT；
+ *   2. CLI 里根本不给 opts.baselineCommit 赋值 —— 锚只能是 BASELINE_COMMIT。
+ * 测试要换锚点走函数参数 run(root, { baselineCommit })，那是唯一合法的换法。
+ */
+test('校验器源码里没有从环境变量换锚点的开关', () => {
+  const src = fs.readFileSync(path.join(__dirname, 'validate-skills.js'), 'utf8');
+  assert.ok(!/process\.env\.SEG2_BASELINE_COMMIT/.test(src), '源码里还在读 SEG2_BASELINE_COMMIT');
+  assert.ok(!/baselineCommit\s*=\s*process\.env/.test(src), '源码里还在用环境变量赋 baselineCommit');
+  assert.ok(!/opts\.baselineCommit\s*=/.test(src), 'CLI 里还在给 opts.baselineCommit 赋值');
+});
+
+/**
+ * 端到端复现协调者实测过的攻破：
+ *   篡改一个基线文件 → 把清单里对应的 sha 改成篡改后的 sha → 提交进历史 →
+ *   SEG2_BASELINE_COMMIT=HEAD 想把锚点换成 HEAD。
+ * 期望：锚点不理会这个环境变量，仍钉在 f7bd915，报出清单与基线提交不一致。
+ *
+ * 用真实仓库的临时克隆做，因为只有它才含 f7bd915 这个锚提交。
+ */
+test('SEG2_BASELINE_COMMIT=HEAD 不能把锚点换成 HEAD（端到端）', () => {
+  // 源路径要用正斜杠：git 会把 "D:\..." 里的盘符冒号当成 URL 的 scheme，
+  // 于是 --local 被忽略、仓库被当成远程。--no-hardlinks：源和临时目录可能不在一个盘上。
+  const repoRoot = path.resolve(__dirname, '..').split(path.sep).join('/');
+  const clone = fs.mkdtempSync(path.join(os.tmpdir(), 'seg2-clone-'));
+  try {
+    execFileSync('git', ['clone', '--local', '--no-hardlinks', '--quiet', repoRoot, clone], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    const bdir = path.join(clone, 'skills', 'bazi-tuipan');
+    const victim = 'tuipan-master.skill.md';
+    // 篡改一个受保护的基线文件（不是那 6 个可变文档）
+    fs.appendFileSync(path.join(bdir, victim), '\n被篡改了一行\n');
+    const newSha = execFileSync('git', ['hash-object', '--stdin-paths'], {
+      cwd: clone, encoding: 'utf8', input: `skills/bazi-tuipan/${victim}\n`,
+    }).trim();
+
+    // 把清单里对应的 sha 换成篡改后的 sha —— 清单也被一起改掉，一起提交
+    const mpath = path.join(bdir, '.baseline-manifest.txt');
+    const lines = fs.readFileSync(mpath, 'utf8').split(/\r?\n/);
+    const i = lines.findIndex((l) => l.endsWith(`  ${victim}`));
+    assert.ok(i >= 0, '清单里找不到 ' + victim);
+    lines[i] = `${newSha}  ${victim}`;
+    fs.writeFileSync(mpath, lines.join('\n'));
+    execFileSync('git', ['-c', 'user.email=t@example.com', '-c', 'user.name=测试', 'commit', '-qam', 'tamper'], { cwd: clone });
+
+    // 用环境变量试图把锚点换成 HEAD
+    const res = spawnSync(process.execPath, [path.join(__dirname, 'validate-skills.js'), clone], {
+      cwd: clone, encoding: 'utf8',
+      env: { ...process.env, SEG2_BASELINE_COMMIT: 'HEAD' },
+    });
+    const out = `${res.stdout || ''}${res.stderr || ''}`;
+    assert.strictEqual(res.status, 1, out);
+    // 锚点必须仍然钉在 f7bd915
+    assert.ok(out.includes(`（基线提交 ${validate.BASELINE_COMMIT}）`), '锚点被环境变量换掉了:\n' + out);
+    assert.ok(!out.includes('（基线提交 HEAD）'), '锚点被环境变量换成了 HEAD:\n' + out);
+    // 报错要指出是哪个文件
+    assert.ok(out.includes(victim), '报错没指出是哪个文件:\n' + out);
+    // 工作区那条腿看不出问题（清单与工作区是自洽的）—— 只有锚点能抓住
+    assert.ok(!out.includes('基线文件被改动'), '不该由工作区那条腿来报:\n' + out);
+  } finally {
+    fs.rmSync(clone, { recursive: true, force: true });
+  }
+});
+
+// ===========================================================================
+// 第四轮：Minor A —— candidates 全删时 --expect-candidates 必须报 4 条缺失
+// ===========================================================================
+
+test('candidates 四份全删 + 显式要求 candidates 时报 4 条缺失', () => {
+  const root = makeCompliantRepo({
+    extraFiles: Object.fromEntries(validate.CANDIDATE_FILES.map((f) => [`candidates/${f}`, '内容\n'])),
+  });
+  const cdir = path.join(root, 'skills', 'bazi-tuipan', 'candidates');
+  for (const f of validate.CANDIDATE_FILES) fs.rmSync(path.join(cdir, f));
+  // 不带 --expect-candidates 时（Task 8 还没开工）不报
+  assert.ok(!run(root).errors.some((e) => e.includes('candidates/ 缺少')), '不该报');
+  // 带上 --expect-candidates 时四份全缺，必须报 4 条
+  const r = run(root, { expectCandidates: true });
+  const missing = r.errors.filter((e) => e.startsWith('candidates/ 缺少 '));
+  assert.strictEqual(missing.length, 4, r.errors.join('\n'));
+});
+
+// ===========================================================================
+// 第四轮：Minor B —— 参考资料的不可变性要有常驻断言
+// ===========================================================================
+
+test('参考资料原样时没有相关报错', () => {
+  const root = makeRepo();
+  const problems = baseline(root);
+  assert.ok(!problems.some((e) => e.includes('参考资料')), problems.join('\n'));
+});
+
+test('参考资料被改动时报出是哪个文件', () => {
+  const root = makeRepo();
+  fs.appendFileSync(path.join(root, '参考资料', '事业2.txt'), '\n被改了\n');
+  const problems = baseline(root);
+  assert.ok(problems.some((e) => e.includes('参考资料被改动: 参考资料/事业2.txt')), problems.join('\n'));
+});
+
+test('参考资料被删掉时报出丢失', () => {
+  const root = makeRepo();
+  fs.rmSync(path.join(root, '参考资料', '事业3.txt'));
+  const problems = baseline(root);
+  assert.ok(problems.some((e) => e.includes('参考资料丢失: 参考资料/事业3.txt')), problems.join('\n'));
+});
+
+test('参考资料的锚点独立于基线清单（清单动不了它）', () => {
+  const root = makeRepo();
+  // 参考资料被改了，清单本身是好的 —— 这条腿照样要报
+  fs.appendFileSync(path.join(root, '参考资料', '事业4.txt'), '\n被改了\n');
+  const problems = baseline(root);
+  assert.ok(problems.some((e) => e.includes('参考资料被改动: 参考资料/事业4.txt')), problems.join('\n'));
+});
+
+// ===========================================================================
+// 第四轮：Minor C —— 契约的 9 个数组必须声明 minItems >= 1
+// ===========================================================================
+
+test('契约 schema 的 9 个数组都声明 minItems 时不报 minItems 错', () => {
+  const root = makeCompliantRepo();
+  const r = run(root);
+  assert.ok(!r.errors.some((e) => e.includes('minItems')), r.errors.join('\n'));
+});
+
+test('契约 schema 的数组缺 minItems 时报错', () => {
+  const schema = JSON.parse(JSON.stringify(CANONICAL_SCHEMA));
+  delete schema.properties.xiJi.properties.xi.minItems;
+  const root = makeCompliantRepo({ schema });
+  const r = run(root);
+  assert.ok(r.errors.some((e) => e.includes('minItems') && e.includes('xiJi.xi')), r.errors.join('\n'));
+});
+
+test('契约 schema 的数组 minItems 写成 0 时报错', () => {
+  const schema = JSON.parse(JSON.stringify(CANONICAL_SCHEMA));
+  schema.properties.summary.properties.notes.minItems = 0;
+  const root = makeCompliantRepo({ schema });
+  const r = run(root);
+  assert.ok(r.errors.some((e) => e.includes('minItems') && e.includes('summary.notes')), r.errors.join('\n'));
+});
+
+test('契约 schema 的 9 个数组路径都被检查到（逐个抽掉 minItems 都得报）', () => {
+  for (const p of EXPECTED_MIN_ITEMS_PATHS) {
+    const schema = JSON.parse(JSON.stringify(CANONICAL_SCHEMA));
+    let node = schema;
+    for (const raw of p) {
+      const isArray = raw.endsWith('[]');
+      const name = isArray ? raw.slice(0, -2) : raw;
+      node = node.properties[name];
+      if (isArray) node = node.items;
+    }
+    delete node.minItems;
+    const root = makeCompliantRepo({ schema });
+    const r = run(root);
+    const hits = r.errors.filter((e) => e.includes('minItems'));
+    assert.strictEqual(hits.length, 1, `路径 ${p.join('.')} 没被检查到:\n${r.errors.join('\n')}`);
+  }
+});
+
+test('样例里 playbooks 为空数组时报错（minItems 生效）', () => {
+  const sample = JSON.parse(JSON.stringify(CANONICAL_SAMPLE));
+  sample.playbooks = [];
+  const root = makeCompliantRepo({ sample });
+  const r = run(root);
+  assert.ok(r.errors.some((e) => e.includes('至少需要 1 项')), r.errors.join('\n'));
+});
+
+test('样例里 summary.notes 为空数组时报错（minItems 生效）', () => {
+  const sample = JSON.parse(JSON.stringify(CANONICAL_SAMPLE));
+  sample.summary.notes = [];
+  const root = makeCompliantRepo({ sample });
+  const r = run(root);
+  assert.ok(r.errors.some((e) => e.includes('至少需要 1 项')), r.errors.join('\n'));
 });
