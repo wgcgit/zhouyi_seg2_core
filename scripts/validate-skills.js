@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { execFileSync } = require('child_process');
 const { frontmatter, section, hasSection } = require('./lib/extract');
 const { checkValue } = require('./lib/schema-check');
 
@@ -31,8 +32,11 @@ const MUTABLE_BASELINE = new Set([
   'INDEX.md', 'PIPELINE_STATE.md', 'verified.md',
 ]);
 
+const MANIFEST_NAME = '.baseline-manifest.txt';
+const SKILL_DIR = path.join('skills', 'bazi-tuipan');
+
 function readManifest(dir) {
-  const file = path.join(dir, '.baseline-manifest.txt');
+  const file = path.join(dir, MANIFEST_NAME);
   if (!fs.existsSync(file)) return [];
   return fs.readFileSync(file, 'utf8')
     .split(/\r?\n/)
@@ -44,22 +48,58 @@ function readManifest(dir) {
     .filter(Boolean);
 }
 
-/** 比对基线文件 blob，返回不一致清单 */
+/**
+ * 比对基线文件 blob，返回不一致清单。
+ * 用 `git hash-object` 比 blob（会应用 clean filter 归一化 CRLF），不看工作区内容。
+ */
 function baseline(root) {
-  const dir = path.join(root, 'skills', 'bazi-tuipan');
+  const dir = path.join(root, SKILL_DIR);
   const problems = [];
-  for (const { sha, file } of readManifest(dir)) {
-    if (MUTABLE_BASELINE.has(file)) continue;
-    const full = path.join(dir, file);
-    if (!fs.existsSync(full)) {
+
+  const manifestFile = path.join(dir, MANIFEST_NAME);
+  if (!fs.existsSync(manifestFile)) {
+    // 清单缺失/未提交 = 基线守卫静默失效，必须报红而不是一路绿灯
+    problems.push(`缺少基线清单 ${SKILL_DIR.split(path.sep).join('/')}/${MANIFEST_NAME}`);
+    return problems;
+  }
+
+  const entries = readManifest(dir);
+
+  // 存在性检查对全部条目都做（含那 6 个可变顶层文档）
+  const present = [];
+  for (const { sha, file } of entries) {
+    if (!fs.existsSync(path.join(dir, file))) {
       problems.push(`基线文件丢失: ${file}`);
       continue;
     }
-    const actual = require('child_process')
-      .execFileSync('git', ['hash-object', full], { cwd: root, encoding: 'utf8' })
-      .trim();
-    if (actual !== sha) problems.push(`基线文件被改动: ${file}`);
+    present.push({ sha, file });
   }
+
+  // hash 比对只针对不可变的基线文件
+  const toHash = present.filter((e) => !MUTABLE_BASELINE.has(e.file));
+  if (toHash.length === 0) return problems;
+
+  let out;
+  try {
+    // 一次 git 子进程算完整批（输出与逐个算完全一致）
+    out = execFileSync('git', ['hash-object', '--stdin-paths'], {
+      cwd: root,
+      encoding: 'utf8',
+      input: toHash.map((e) => `${SKILL_DIR.split(path.sep).join('/')}/${e.file}`).join('\n') + '\n',
+    });
+  } catch (e) {
+    problems.push(`无法执行 git hash-object 比对基线 —— ${e.message}`);
+    return problems;
+  }
+
+  const hashes = out.split('\n').map((s) => s.trim()).filter(Boolean);
+  if (hashes.length !== toHash.length) {
+    problems.push(`git hash-object 输出条数不符（期望 ${toHash.length} 条，实际 ${hashes.length} 条）`);
+    return problems;
+  }
+  toHash.forEach((e, i) => {
+    if (hashes[i] !== e.sha) problems.push(`基线文件被改动: ${e.file}`);
+  });
   return problems;
 }
 
@@ -87,7 +127,8 @@ function checkSkillStructure(errors, skillName, text, requireA2) {
     errors.push(`${skillName}: 缺少 ## A2（Future Trigger）段`);
   }
   const interp = section(text, 'Interpretation（核心方法论）');
-  if (interp && /输出\s*JSON|JSON\s*输出|字段名/.test(interp)) {
+  // 「字段名」只在列举语境（后跟冒号）时才算格式指令，正当的「字段名称」不误伤
+  if (interp && /输出\s*JSON|JSON\s*输出|字段名\s*[:：]/.test(interp)) {
     errors.push(`${skillName}: Interpretation 段混入了流程/格式指令（应只放知识）`);
   }
 }
@@ -108,6 +149,11 @@ function checkTestPrompts(errors, skillName, file) {
   let trues = 0;
   let falses = 0;
   for (const [i, item] of data.entries()) {
+    // 畸形条目（不是普通对象）不能崩：报错并跳过这一条，继续查其余条目
+    if (typeof item !== 'object' || item === null || Array.isArray(item)) {
+      errors.push(`${skillName}/test-prompts.json[${i}]: 条目必须是对象（实际 ${item === null ? 'null' : JSON.stringify(item)}）`);
+      continue;
+    }
     for (const key of ['id', 'prompt', 'expected_skill', 'should_fire', 'category', 'note']) {
       if (!(key in item)) errors.push(`${skillName}/test-prompts.json[${i}]: 缺少字段 ${key}`);
     }
@@ -150,38 +196,101 @@ function readSchema(root, errors) {
   }
 }
 
+/**
+ * 契约自身的形状检查：required 必须是非空数组，且 required 与 properties 的键集合一致。
+ * 否则「契约和总入口对不对得上」这条检查会退化成无错即过的空断言。
+ */
+function checkSchemaShape(errors, schema) {
+  if (!schema) return false;
+  const required = Array.isArray(schema.required) ? schema.required : [];
+  if (required.length === 0) {
+    errors.push('契约 schema 缺少非空的 required 数组');
+    return false;
+  }
+  const props = (schema.properties && typeof schema.properties === 'object') ? schema.properties : {};
+  let ok = true;
+  for (const key of required) {
+    if (!Object.prototype.hasOwnProperty.call(props, key)) {
+      errors.push(`契约 schema: required 顶层键 "${key}" 未在 properties 中定义`);
+      ok = false;
+    }
+  }
+  for (const key of Object.keys(props)) {
+    if (!required.includes(key)) {
+      errors.push(`契约 schema: properties 顶层键 "${key}" 未列入 required`);
+      ok = false;
+    }
+  }
+  return ok;
+}
+
 /** 总入口的 Execution 段必须点名契约的每一个顶层键 */
 function checkMasterAlignment(errors, schema, masterText) {
   if (!schema) return;
+  const required = Array.isArray(schema.required) ? schema.required : [];
+  if (required.length === 0) return; // 形状问题已由 checkSchemaShape 报过
   const exec = section(masterText, 'Execution（执行步骤）');
-  if (!exec) {
-    errors.push('shiye-master: 缺少 ## Execution（执行步骤）段');
-    return;
-  }
-  for (const key of schema.required || []) {
+  // 缺 Execution 段本身已由 checkSkillStructure 报过，这里不重复报
+  if (!exec) return;
+  for (const key of required) {
     if (!exec.includes(key)) {
       errors.push(`shiye-master: Execution 段未点名契约顶层键 "${key}"`);
     }
   }
 }
 
+/**
+ * 契约样例校验：docs/CAREER_SCHEMA.sample.json 若存在，就按 docs/CAREER_SCHEMA.md 的
+ * schema 校验一遍（样例文件由 Task 2 创建；不存在时不报错）。
+ */
+function checkSchemaSample(root, schema, errors) {
+  if (!schema) return;
+  const sampleFile = path.join(root, 'docs', 'CAREER_SCHEMA.sample.json');
+  if (!fs.existsSync(sampleFile)) return;
+  let sample;
+  try {
+    sample = JSON.parse(fs.readFileSync(sampleFile, 'utf8'));
+  } catch (e) {
+    errors.push(`契约样例 docs/CAREER_SCHEMA.sample.json: JSON 解析失败 —— ${e.message}`);
+    return;
+  }
+  const sub = [];
+  checkValue(sample, schema, '$', sub);
+  for (const e of sub) {
+    errors.push(`契约样例 docs/CAREER_SCHEMA.sample.json 不符合契约: ${e}`);
+  }
+}
+
 function run(root) {
   const errors = [];
-  const dir = path.join(root, 'skills', 'bazi-tuipan');
+  const dir = path.join(root, SKILL_DIR);
 
   errors.push(...baseline(root));
 
   const schema = readSchema(root, errors);
+  checkSchemaShape(errors, schema);
+  checkSchemaSample(root, schema, errors);
 
   // 已有基线 skill：结构检查（规范文件不在此列；A2 不对基线强制）
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+  // 新 skill 由下面的 NEW_SKILLS 循环统一负责（那一轮 requireA2=true 更严），
+  // 这里必须跳过，否则同一个缺陷会被报 2~3 次。
+  let entries = [];
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch (e) {
+    errors.push(`缺少 ${SKILL_DIR.split(path.sep).join('/')} 目录 —— ${e.message}`);
+    entries = [];
+  }
+  for (const entry of entries) {
     if (entry.isDirectory()) {
+      if (NEW_SKILLS.includes(entry.name)) continue;
       const skillFile = path.join(dir, entry.name, 'SKILL.md');
       if (fs.existsSync(skillFile)) {
         checkSkillStructure(errors, entry.name, fs.readFileSync(skillFile, 'utf8'), false);
       }
     } else if (entry.name.endsWith('.skill.md') && entry.name !== '八字完整推盘输出通用规范.skill.md') {
       const skillName = entry.name.replace(/\.skill\.md$/, '');
+      if (NEW_SKILLS.includes(skillName)) continue;
       const text = fs.readFileSync(path.join(dir, entry.name), 'utf8');
       checkSkillStructure(errors, skillName, text, false);
     }

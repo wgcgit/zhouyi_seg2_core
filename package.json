@@ -5,6 +5,7 @@
   "description": "八字事业择业 skill 知识库（zhouyi_seg2）",
   "scripts": {
     "test": "node --test scripts/lib/schema-check.test.js scripts/validate-skills.test.js && node scripts/validate-skills.js",
+    "test:unit": "node --test scripts/lib/schema-check.test.js scripts/validate-skills.test.js",
     "validate": "node scripts/validate-skills.js"
   }
 }
