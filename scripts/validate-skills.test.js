@@ -32,15 +32,19 @@ const EXPECTED_ENUMS = [
 const EXPECTED_BASELINE_COUNT = 42;
 
 /**
- * 契约里必须声明 minItems >= 1 的 9 个数组路径。
+ * 契约里必须声明 minItems >= 1 的 8 个数组路径。
  * 空数组 = 「只覆盖了半边」的样例（playbooks: [] / summary.notes: [] 都能蒙混过关），
  * 所以契约必须自己声明这些数组至少 1 项。
+ * 唯一豁免：xiJi.ciXi（辅药，允许为空，且不得声明 minItems）。
  */
 const EXPECTED_MIN_ITEMS_PATHS = [
-  ['xiJi', 'xi'], ['xiJi', 'ciXi'], ['xiJi', 'ji'],
+  ['xiJi', 'xi'], ['xiJi', 'ji'],
   ['boundaries'], ['playbooks'], ['playbooks[]', 'actions'],
   ['timeline'], ['timeline[]', 'liunianWindows'], ['summary', 'notes'],
 ];
+
+/** 允许为空、且不得声明 minItems >= 1 的路径（唯一豁免） */
+const EXPECTED_OPTIONAL_PATHS = [['xiJi', 'ciXi']];
 
 /**
  * 契约的规范形态 —— 这里就是「Task 2 必须落盘的东西」。
@@ -208,7 +212,6 @@ const CANONICAL_SCHEMA = {
         },
         "ciXi": {
           "type": "array",
-          "minItems": 1,
           "items": {
             "type": "string"
           }
@@ -1557,10 +1560,10 @@ test('参考资料的锚点独立于基线清单（清单动不了它）', () =>
 });
 
 // ===========================================================================
-// 第四轮：Minor C —— 契约的 9 个数组必须声明 minItems >= 1
+// 第四轮：Minor C —— 契约的数组必须声明 minItems >= 1（第五轮起是 8 条，ciXi 豁免）
 // ===========================================================================
 
-test('契约 schema 的 9 个数组都声明 minItems 时不报 minItems 错', () => {
+test('契约 schema 的必非空数组都声明 minItems 时不报 minItems 错', () => {
   const root = makeCompliantRepo();
   const r = run(root);
   assert.ok(!r.errors.some((e) => e.includes('minItems')), r.errors.join('\n'));
@@ -1582,7 +1585,7 @@ test('契约 schema 的数组 minItems 写成 0 时报错', () => {
   assert.ok(r.errors.some((e) => e.includes('minItems') && e.includes('summary.notes')), r.errors.join('\n'));
 });
 
-test('契约 schema 的 9 个数组路径都被检查到（逐个抽掉 minItems 都得报）', () => {
+test('契约 schema 的必非空数组路径都被检查到（逐个抽掉 minItems 都得报）', () => {
   for (const p of EXPECTED_MIN_ITEMS_PATHS) {
     const schema = JSON.parse(JSON.stringify(CANONICAL_SCHEMA));
     let node = schema;
@@ -1614,4 +1617,67 @@ test('样例里 summary.notes 为空数组时报错（minItems 生效）', () =>
   const root = makeCompliantRepo({ sample });
   const r = run(root);
   assert.ok(r.errors.some((e) => e.includes('至少需要 1 项')), r.errors.join('\n'));
+});
+
+// ===========================================================================
+// 第五轮：ciXi 豁免（辅药允许为空）+ 样例顶层键集
+// ===========================================================================
+
+test('ciXi 豁免：契约里 ciXi 不声明 minItems 时不报 minItems 错', () => {
+  const root = makeCompliantRepo();
+  const r = run(root);
+  assert.ok(!r.errors.some((e) => e.includes('minItems')), r.errors.join('\n'));
+  assert.ok(!r.errors.some((e) => e.includes('ciXi')), r.errors.join('\n'));
+});
+
+test('ciXi 豁免：样例里 xiJi.ciXi 为空数组时不报错', () => {
+  const sample = JSON.parse(JSON.stringify(CANONICAL_SAMPLE));
+  sample.xiJi.ciXi = [];
+  const root = makeCompliantRepo({ sample });
+  const r = run(root);
+  assert.deepStrictEqual(r.errors, [], r.errors.join('\n'));
+});
+
+test('契约里给 ciXi 声明 minItems>=1 时报错（豁免不能被吃掉）', () => {
+  const schema = JSON.parse(JSON.stringify(CANONICAL_SCHEMA));
+  schema.properties.xiJi.properties.ciXi.minItems = 1;
+  const root = makeCompliantRepo({ schema });
+  const r = run(root);
+  assert.ok(r.errors.some((e) => e.includes('ciXi') && e.includes('不得声明 minItems')), r.errors.join('\n'));
+});
+
+test('契约里给 ciXi 声明 minItems: 0 时不报错（0 等于没有约束）', () => {
+  const schema = JSON.parse(JSON.stringify(CANONICAL_SCHEMA));
+  schema.properties.xiJi.properties.ciXi.minItems = 0;
+  const root = makeCompliantRepo({ schema });
+  const r = run(root);
+  assert.ok(!r.errors.some((e) => e.includes('ciXi')), r.errors.join('\n'));
+});
+
+test('豁免路径只有 xiJi.ciXi 一条，且它不在必非空的 8 条里', () => {
+  assert.deepStrictEqual(validate.CONTRACT_ARRAY_OPTIONAL, EXPECTED_OPTIONAL_PATHS);
+  assert.deepStrictEqual(validate.CONTRACT_ARRAY_MIN_ITEMS, EXPECTED_MIN_ITEMS_PATHS);
+  assert.strictEqual(EXPECTED_MIN_ITEMS_PATHS.length, 8);
+});
+
+test('样例多一个顶层键时报错', () => {
+  const sample = JSON.parse(JSON.stringify(CANONICAL_SAMPLE));
+  sample.extraTopLevel = '不该出现';
+  const root = makeCompliantRepo({ sample });
+  const r = run(root);
+  assert.ok(r.errors.some((e) => e.includes('顶层键集不对') && e.includes('多出 extraTopLevel')), r.errors.join('\n'));
+});
+
+test('样例少一个顶层键时报错', () => {
+  const sample = JSON.parse(JSON.stringify(CANONICAL_SAMPLE));
+  delete sample.summary;
+  const root = makeCompliantRepo({ sample });
+  const r = run(root);
+  assert.ok(r.errors.some((e) => e.includes('顶层键集不对') && e.includes('缺少 summary')), r.errors.join('\n'));
+});
+
+test('样例顶层键集恰好是规范那 10 个键时不报键集错', () => {
+  const root = makeCompliantRepo();
+  const r = run(root);
+  assert.ok(!r.errors.some((e) => e.includes('顶层键集不对')), r.errors.join('\n'));
 });

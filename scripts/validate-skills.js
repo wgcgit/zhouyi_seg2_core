@@ -88,16 +88,26 @@ const CONTRACT_ENUMS = [
 ];
 
 /**
- * 契约里必须声明 minItems >= 1 的 9 个数组路径。
+ * 契约里必须声明 minItems >= 1 的 8 个数组路径。
  * 空数组 = 「只覆盖了半边」的样例（playbooks: [] / summary.notes: [] 都能蒙混过关），
  * 所以契约必须自己声明这些数组至少 1 项。schema-check.js 认 minItems（样例那条腿查得出来），
  * 这里只补一句「契约有没有声明 minItems」的断言，不用改 scripts/lib/。
+ *
+ * 唯一豁免是 xiJi.ciXi（次喜 / 辅助用神）：
+ *   - `参考资料/事业3.txt:78` 区分「必须救的急药」与「锦上添花的辅药」——
+ *     辅助用神本质可选，强行要求非空等于**逼模型编一个不存在的次喜**；
+ *   - 对照 `参考资料/事业1.txt:56`「缺但为忌，补了反而压力大」——
+ *     忌神（xiJi.ji）由喜用关系派生，不因该五行不在原局就消失，所以它必须非空。
+ * 豁免由 CONTRACT_ARRAY_OPTIONAL 单独断言（见下），防止日后被误加回去。
  */
 const CONTRACT_ARRAY_MIN_ITEMS = [
-  ['xiJi', 'xi'], ['xiJi', 'ciXi'], ['xiJi', 'ji'],
+  ['xiJi', 'xi'], ['xiJi', 'ji'],
   ['boundaries'], ['playbooks'], ['playbooks[]', 'actions'],
   ['timeline'], ['timeline[]', 'liunianWindows'], ['summary', 'notes'],
 ];
+
+/** 允许为空、且**不得**声明 minItems >= 1 的数组路径（唯一豁免：xiJi.ciXi = 辅药） */
+const CONTRACT_ARRAY_OPTIONAL = [['xiJi', 'ciXi']];
 
 /**
  * 读基线清单。返回 { entries, malformed }：
@@ -455,7 +465,7 @@ function checkSchemaShape(errors, schema) {
     ok = false;
   }
 
-  // 9 个数组必须声明 minItems >= 1 —— 空数组的样例只覆盖了半边
+  // 8 个数组必须声明 minItems >= 1 —— 空数组的样例只覆盖了半边
   for (const spec of CONTRACT_ARRAY_MIN_ITEMS) {
     const label = spec.join('.');
     const node = resolveSchemaNode(schema, spec);
@@ -467,6 +477,22 @@ function checkSchemaShape(errors, schema) {
     if (!(typeof node.minItems === 'number' && node.minItems >= 1)) {
       const actual = node.minItems === undefined ? '未声明' : node.minItems;
       errors.push(`契约 schema 的数组必须声明 minItems >= 1：${label}（实际 ${actual}）`);
+      ok = false;
+    }
+  }
+
+  // 豁免路径：ciXi（辅药）允许为空，且**不得**声明 minItems >= 1 ——
+  // 一旦被加回去，就等于逼模型为本没有次喜的命例编一个次喜出来。
+  for (const spec of CONTRACT_ARRAY_OPTIONAL) {
+    const label = spec.join('.');
+    const node = resolveSchemaNode(schema, spec);
+    if (!node || node.type !== 'array') {
+      errors.push(`契约 schema 缺少数组定义：${label}`);
+      ok = false;
+      continue;
+    }
+    if (typeof node.minItems === 'number' && node.minItems >= 1) {
+      errors.push(`契约 schema 的数组不得声明 minItems >= 1：${label}（实际 ${node.minItems}）—— ciXi 是辅药，允许为空；声明 minItems>=1 会逼模型编造次喜`);
       ok = false;
     }
   }
@@ -565,6 +591,23 @@ function checkSchemaSample(root, schema, errors) {
   } catch (e) {
     errors.push(`契约样例 docs/CAREER_SCHEMA.sample.json: JSON 解析失败 —— ${e.message}`);
     return;
+  }
+  // 样例的顶层键集必须恰好是规范那 10 个键：少一个 = 只覆盖了半边，
+  // 多一个 = 契约管不住它（样例里有契约不认的东西，等于没人管）。
+  // 这一条补上「多余顶层键能蒙混过关」那一半 —— 它是评审提的那半，schema-check.js 没有 additionalProperties。
+  if (sample && typeof sample === 'object' && !Array.isArray(sample)) {
+    const sampleKeys = Object.keys(sample).sort();
+    const wantedKeys = CONTRACT_TOP_LEVEL_KEYS.slice().sort();
+    for (const k of wantedKeys) {
+      if (!sampleKeys.includes(k)) {
+        errors.push(`契约样例 docs/CAREER_SCHEMA.sample.json 顶层键集不对：缺少 ${k}`);
+      }
+    }
+    for (const k of sampleKeys) {
+      if (!wantedKeys.includes(k)) {
+        errors.push(`契约样例 docs/CAREER_SCHEMA.sample.json 顶层键集不对：多出 ${k}`);
+      }
+    }
   }
   const sub = [];
   checkValue(sample, schema, '$', sub);
@@ -676,7 +719,7 @@ module.exports = {
   run, baseline, NEW_SKILLS, REQUIRED_TERMS, MUTABLE_BASELINE,
   BASELINE_FILE_COUNT, BASELINE_COMMIT, CANDIDATE_FILES,
   CONTRACT_TOP_LEVEL_KEYS, CONTRACT_ENUMS, CONTRACT_ARRAY_MIN_ITEMS,
-  REFERENCE_DIR, mentionsKey,
+  CONTRACT_ARRAY_OPTIONAL, REFERENCE_DIR, mentionsKey,
 };
 
 if (require.main === module) {
