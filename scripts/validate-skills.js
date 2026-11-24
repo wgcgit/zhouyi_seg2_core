@@ -35,17 +35,50 @@ const MUTABLE_BASELINE = new Set([
 const MANIFEST_NAME = '.baseline-manifest.txt';
 const SKILL_DIR = path.join('skills', 'bazi-tuipan');
 
+/** 基线文件数（Task 1 建基线时的既定事实）—— 清单被截断/写坏时用它把「静默通过」变成报错 */
+const BASELINE_FILE_COUNT = 42;
+
+/**
+ * 事业推理契约的规范顶层键集 —— 权威来源：docs/superpowers/plans/2026-11-24-shiye-skill-plan.md
+ * 的 Global Constraints（commit a5c7d22）。契约必须恰好是这 10 个键，多一个少一个都算错。
+ */
+const CONTRACT_TOP_LEVEL_KEYS = [
+  'case', 'monthCommand', 'pattern', 'tiaoHou', 'xiJi',
+  'boundaries', 'playbooks', 'timeline', 'transition', 'summary',
+];
+
+/**
+ * 契约里 8 组闭合枚举（固定取值集）。path 里的 'x[]' 表示数组 items。
+ * 两处 verdict 各有各的枚举，不可互换 —— 这是「同名字段不同语义」最容易翻车的地方。
+ */
+const CONTRACT_ENUMS = [
+  { path: ['pattern', 'verdict'], values: ['成格', '破格', '不清'] },
+  { path: ['tiaoHou', 'climateType'], values: ['寒局', '燥热局', '湿重局', '燥硬局', '春木旺局', '秋金肃局'] },
+  { path: ['tiaoHou', 'drugStatus'], values: ['真药', '藏药', '假药'] },
+  { path: ['playbooks[]', 'scale'], values: ['早期', '轻创业', '重资产', '合伙'] },
+  { path: ['timeline[]', 'type'], values: ['水运', '木运', '火运', '土运', '金运'] },
+  { path: ['timeline[]', 'verdict'], values: ['重仓', '轻试', '守成'] },
+  { path: ['timeline[]', 'liunianWindows[]', 'action'], values: ['宜', '忌'] },
+  { path: ['summary', 'strategy'], values: ['主业重仓', '底盘待机', '守成缓投'] },
+];
+
+/**
+ * 读基线清单。返回 { entries, malformed }：
+ * malformed 是既不像注释、也不像「<sha1>  <路径>」的行 —— 清单被写坏/合并冲突截断的痕迹。
+ */
 function readManifest(dir) {
   const file = path.join(dir, MANIFEST_NAME);
-  if (!fs.existsSync(file)) return [];
-  return fs.readFileSync(file, 'utf8')
-    .split(/\r?\n/)
-    .filter((l) => l && !l.startsWith('#'))
-    .map((l) => {
-      const m = /^([0-9a-f]{40})\s+(.+)$/.exec(l.trim());
-      return m ? { sha: m[1], file: m[2] } : null;
-    })
-    .filter(Boolean);
+  if (!fs.existsSync(file)) return { entries: [], malformed: [] };
+  const entries = [];
+  const malformed = [];
+  for (const raw of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || line.startsWith('#')) continue;
+    const m = /^([0-9a-f]{40})\s+(.+)$/.exec(line);
+    if (m) entries.push({ sha: m[1], file: m[2].trim() });
+    else malformed.push(line);
+  }
+  return { entries, malformed };
 }
 
 /**
@@ -63,9 +96,25 @@ function baseline(root) {
     return problems;
   }
 
-  const entries = readManifest(dir);
+  const { entries, malformed } = readManifest(dir);
 
-  // 存在性检查对全部条目都做（含那 6 个可变顶层文档）
+  // 清单自身的完整性 —— 清单被截断/写坏时如果只按「读到的条目」检查，
+  // 基线守卫会整条腿静默失效（0 条 → 0 错 → 绿灯）。
+  if (entries.length !== BASELINE_FILE_COUNT) {
+    problems.push(`基线清单条目数不对：应为 ${BASELINE_FILE_COUNT} 条，实际 ${entries.length} 条`);
+  }
+  if (malformed.length > 0) {
+    problems.push(`基线清单有 ${malformed.length} 行无法解析（第一行：${malformed[0]}）`);
+  }
+  const seen = new Set();
+  for (const { file } of entries) {
+    if (seen.has(file)) problems.push(`基线清单有重复条目: ${file}`);
+    seen.add(file);
+  }
+
+  // 存在性检查对全部条目都做（含那 6 个可变顶层文档）。
+  // 方向是「清单 ⊆ 实际」：后来新建的 skill 目录、candidates/、清单自身都不在清单里，
+  // 不能反过来要求「实际 ⊆ 清单」。
   const present = [];
   for (const { sha, file } of entries) {
     if (!fs.existsSync(path.join(dir, file))) {
@@ -196,8 +245,27 @@ function readSchema(root, errors) {
   }
 }
 
+/** 按 'x[]' 写法在 schema 里定位一个节点；定位不到返回 null */
+function resolveSchemaNode(schema, pathParts) {
+  let node = schema;
+  for (const raw of pathParts) {
+    if (!node || typeof node !== 'object') return null;
+    const isArray = raw.endsWith('[]');
+    const name = isArray ? raw.slice(0, -2) : raw;
+    const props = node.properties;
+    if (!props || typeof props !== 'object' || !Object.prototype.hasOwnProperty.call(props, name)) return null;
+    node = props[name];
+    if (isArray) {
+      if (!node || typeof node !== 'object' || !node.items) return null;
+      node = node.items;
+    }
+  }
+  return node;
+}
+
 /**
- * 契约自身的形状检查：required 必须是非空数组，且 required 与 properties 的键集合一致。
+ * 契约自身的形状检查：required 必须是非空数组，required 与 properties 的键集合一致，
+ * 顶层键集必须恰好是规范的 10 个键，8 组闭合枚举的取值必须与规范完全一致。
  * 否则「契约和总入口对不对得上」这条检查会退化成无错即过的空断言。
  */
 function checkSchemaShape(errors, schema) {
@@ -221,7 +289,57 @@ function checkSchemaShape(errors, schema) {
       ok = false;
     }
   }
+
+  // 顶层键集必须恰好是规范的 10 个键（多一个少一个都算契约走样）
+  const actualKeys = required.slice().sort();
+  const wantedKeys = CONTRACT_TOP_LEVEL_KEYS.slice().sort();
+  if (JSON.stringify(actualKeys) !== JSON.stringify(wantedKeys)) {
+    errors.push(`契约 schema 顶层键集不对：应为 [${CONTRACT_TOP_LEVEL_KEYS.join(' / ')}]，实际 [${required.join(' / ')}]`);
+    ok = false;
+  }
+
+  // 8 组闭合枚举必须与规范完全一致（两处 verdict 的枚举各自独立，不可混用）
+  for (const spec of CONTRACT_ENUMS) {
+    const label = spec.path.join('.');
+    const node = resolveSchemaNode(schema, spec.path);
+    if (!node || !Array.isArray(node.enum)) {
+      errors.push(`契约 schema 缺少闭合枚举定义：${label} 应为 [${spec.values.join(' / ')}]`);
+      ok = false;
+      continue;
+    }
+    const actual = node.enum.slice().sort();
+    const wanted = spec.values.slice().sort();
+    if (JSON.stringify(actual) !== JSON.stringify(wanted)) {
+      errors.push(`契约 schema 闭合枚举取值不对：${label} 应为 [${spec.values.join(' / ')}]，实际 [${node.enum.join(' / ')}]`);
+      ok = false;
+    }
+  }
   return ok;
+}
+
+/**
+ * 契约顶层键是否在文本里被「点名」。
+ * 按标识符边界匹配，而不是无边界子串：
+ *   - `patterns` / `summaryText` 不算点名 `pattern` / `summary`；
+ *   - `use case study` 里的 case 只是英文散文里的普通词，不算点名；
+ *   - 反引号包裹（`case`）或中文标点分隔（case、monthCommand）算点名；
+ *   - 大小写敏感：CASE 不算命中 case。
+ */
+function mentionsKey(text, key) {
+  if (typeof text !== 'string' || !text) return false;
+  if (text.includes('`' + key + '`')) return true;
+  const esc = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`(?<![A-Za-z0-9_$])${esc}(?![A-Za-z0-9_$])`, 'g');
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    const before = text.slice(0, m.index);
+    const after = text.slice(m.index + key.length);
+    // 紧挨着英文单词 → 是散文里的普通词，不是对契约键的引用
+    if (/[A-Za-z][ \t]*$/.test(before)) continue;
+    if (/^[ \t]*[A-Za-z]/.test(after)) continue;
+    return true;
+  }
+  return false;
 }
 
 /** 总入口的 Execution 段必须点名契约的每一个顶层键 */
@@ -229,11 +347,16 @@ function checkMasterAlignment(errors, schema, masterText) {
   if (!schema) return;
   const required = Array.isArray(schema.required) ? schema.required : [];
   if (required.length === 0) return; // 形状问题已由 checkSchemaShape 报过
-  const exec = section(masterText, 'Execution（执行步骤）');
   // 缺 Execution 段本身已由 checkSkillStructure 报过，这里不重复报
-  if (!exec) return;
+  if (!hasSection(masterText, 'Execution（执行步骤）')) return;
+  const exec = section(masterText, 'Execution（执行步骤）');
+  if (!exec) {
+    // 标题在、正文为空 —— 契约对齐整条腿本来会在这里静默失效，必须报红
+    errors.push(`shiye-master: Execution 段正文为空，契约顶层键一个都未点名：${required.join(' / ')}`);
+    return;
+  }
   for (const key of required) {
-    if (!exec.includes(key)) {
+    if (!mentionsKey(exec, key)) {
       errors.push(`shiye-master: Execution 段未点名契约顶层键 "${key}"`);
     }
   }
@@ -331,7 +454,10 @@ function run(root) {
   return { ok: errors.length === 0, errors };
 }
 
-module.exports = { run, baseline, NEW_SKILLS, REQUIRED_TERMS, MUTABLE_BASELINE };
+module.exports = {
+  run, baseline, NEW_SKILLS, REQUIRED_TERMS, MUTABLE_BASELINE,
+  BASELINE_FILE_COUNT, CONTRACT_TOP_LEVEL_KEYS, CONTRACT_ENUMS, mentionsKey,
+};
 
 if (require.main === module) {
   const result = run(ROOT);
