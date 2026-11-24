@@ -4,3 +4,6 @@ node_modules/
 *.log
 .DS_Store
 test-results/
+
+# SDD 进度账本（本地草稿，不入库）
+.superpowers/
