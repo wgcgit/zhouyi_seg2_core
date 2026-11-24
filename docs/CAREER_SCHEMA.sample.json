@@ -1,0 +1,12 @@
+{
+  "case": { "gender": "男", "pillars": { "year": "戊辰", "month": "己未", "day": "乙亥", "hour": "乙酉" } },
+  "monthCommand": { "monthBranch": "未", "dayMaster": "乙木", "seasonClimate": "季夏燥土", "verdict": "财星当令，财多身难独担" },
+  "pattern": { "type": "财格", "verdict": "成格", "storeHouse": "辰为水库，未为燥土财库，双库夹局", "reasoning": "财库厚而闭" },
+  "tiaoHou": { "climateType": "燥热局", "primaryDrug": "癸水", "secondaryDrug": "丙火", "drugStatus": "藏药", "drugReasoning": "亥藏壬水有润根，戊己厚土克水", "gap": "原局无丙透，缺阳光泄秀通关" },
+  "xiJi": { "xi": ["水（印）", "木（比劫）"], "ciXi": ["丙火"], "ji": ["叠土", "叠金"] },
+  "boundaries": [{ "element": "土金赛道", "why": "财重压身、杀重克身", "condition": "须有水木通关，方可轻碰" }],
+  "playbooks": [{ "scale": "轻创业", "condition": "水印流通之年", "actions": ["咨询工作室", "独立方案团队"] }],
+  "timeline": [{ "ganZhi": "亥子", "type": "水运", "verdict": "重仓", "mainTrack": "深耕专业、铺底盘", "playbook": "早期", "liunianWindows": [{ "year": 2030, "signal": "透出调候用神", "action": "宜" }] }],
+  "transition": { "risk": "藤萝根基未稳，见财心动、盲目重仓", "advice": "交运前后一两年不新开长线重资产盘" },
+  "summary": { "strategy": "底盘待机", "notes": ["喜水木，忌叠土叠金"] }
+}
