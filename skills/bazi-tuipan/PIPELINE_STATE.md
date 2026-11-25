@@ -26,7 +26,7 @@
 
 ---
 
-## Skill 完整清单（18个子 skill + 2个顶级 + 1个规范）
+## Skill 完整清单（基线 19 个：17 个子 skill + 1 个规范 + 1 个总入口；seg2 新增 5 个见文末）
 
 | Skill | 状态 |
 |---|---|
@@ -93,4 +93,5 @@
 **新增说明**
 - **2026-11-24**：seg2 新增事业择业链 5 个 skill + JSON 契约 + 校验工具链。
 - 本次只做知识库，**未接入 v2 运行时**。接入方式：把 4 个子 skill 的 `Interpretation` 段加进
-  `backend/src/llm/prompt.js` 的 `SKILL_CALL_ORDER`，并新增 `shiye-master` 的契约输出字段。
+  姊妹仓库 `zhouyi_seg1_v2` 的 `backend/src/llm/prompt.js` 的 `SKILL_CALL_ORDER`，
+  并新增 `shiye-master` 的契约输出字段。

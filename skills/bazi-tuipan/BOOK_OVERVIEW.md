@@ -92,5 +92,7 @@
 
 ### 应用方向
 
-用户问「适合做什么行业」「什么时候适合创业」时，`shiye-master` 按
-`调候 → 格局 → 五行 → 岁运` 的顺序推进，输出符合 `docs/CAREER_SCHEMA.md` 的事业方案。
+用户问「适合做什么行业」「什么时候适合创业」时，`shiye-master` 把
+`调候 / 格局 / 五行 / 岁运` 四层**叠加**起来判断（四层是职责分工，不是执行先后 ——
+契约键序以 `docs/CAREER_SCHEMA.md` 为准，`pattern` 在 `tiaoHou` 之前），
+输出符合 `docs/CAREER_SCHEMA.md` 的事业方案。

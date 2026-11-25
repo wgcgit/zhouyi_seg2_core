@@ -35,7 +35,7 @@
 
 ---
 
-## Skill 完整清单（17个 + 1个规范 + 1个总入口）
+## Skill 完整清单（基线 19 个：17 个子 skill + 1 个规范 + 1 个总入口；seg2 新增 5 个见文末）
 
 | # | name | 文件路径 | 核心功能 |
 |---|---|---|---|
@@ -114,7 +114,7 @@
         ┌─────────────────────────┐
         │      shiye-master       │ ← 总入口，输出 CAREER_SCHEMA 的 10 键
         └──────────┬──────────────┘
-                   │ 依次调用
+                   │ 并行调用后叠加
     ┌──────────────┼──────────────┬──────────────┐
     ▼              ▼              ▼              ▼
 tiaohou-shiye   geshi-shiye    wuxing-shiye   suiyun-shiye
@@ -125,6 +125,8 @@ tiaohou-shiye   geshi-shiye    wuxing-shiye   suiyun-shiye
                     （叠加后出赛道）
 ```
 
+> 四层是**职责分工**，不是执行先后 —— 输出键序见 `docs/CAREER_SCHEMA.md`（`pattern` 在 `tiaoHou` 之前）。
+
 | # | name | 文件路径 | 核心功能 |
 |---|---|---|---|
 | 20 | **shiye-master** | `shiye-master.skill.md` | **事业择业总入口，输出 CAREER_SCHEMA 契约** |
@@ -132,6 +134,10 @@ tiaohou-shiye   geshi-shiye    wuxing-shiye   suiyun-shiye
 | 22 | geshi-shiye | `geshi-shiye/SKILL.md` | 十格与七组配格的行业定向、成格破格 |
 | 23 | wuxing-shiye | `wuxing-shiye/SKILL.md` | 五行载体、代表职业、方位、复合行业 |
 | 24 | suiyun-shiye | `suiyun-shiye/SKILL.md` | 大运三策略、流年出手与宜守信号 |
+
+> 编号：本表 20–24，接上表 1–19。`verified.md` 的通过单元表是 19–23
+> （它不计「八字完整推盘输出通用规范」这条规范，故少 1）——
+> **跨文件引用同一 skill 请用 skill 名，不要用编号。**
 
 **依赖**：tiaohou-shiye → `shengshuai-panbie` + `xi-ji-quyong`；
 geshi-shiye → `geshi-dingxing`；wuxing-shiye → `wuxing-shengke` + `xi-ji-quyong`；
