@@ -102,3 +102,41 @@
 | `DIGEST.md` | 精华摘要 |
 | `BOOK_OVERVIEW.md` | 阶段0整书理解 |
 | `PIPELINE_STATE.md` | 流水线状态 |
+
+---
+
+## 事业择业链（seg2 新增）
+
+```
+用户问「适合做什么行业 / 什么时候动手」
+                │
+                ▼
+        ┌─────────────────────────┐
+        │      shiye-master       │ ← 总入口，输出 CAREER_SCHEMA 的 10 键
+        └──────────┬──────────────┘
+                   │ 依次调用
+    ┌──────────────┼──────────────┬──────────────┐
+    ▼              ▼              ▼              ▼
+tiaohou-shiye   geshi-shiye    wuxing-shiye   suiyun-shiye
+  调候定药       格局定底盘      五行定载体      岁运定时间表
+    │              │              │              │
+    └──────────────┴──────┬───────┴──────────────┘
+                          ▼
+                    （叠加后出赛道）
+```
+
+| # | name | 文件路径 | 核心功能 |
+|---|---|---|---|
+| 20 | **shiye-master** | `shiye-master.skill.md` | **事业择业总入口，输出 CAREER_SCHEMA 契约** |
+| 21 | tiaohou-shiye | `tiaohou-shiye/SKILL.md` | 调候六气机、真药/藏药/假药、生机赛道 |
+| 22 | geshi-shiye | `geshi-shiye/SKILL.md` | 十格与七组配格的行业定向、成格破格 |
+| 23 | wuxing-shiye | `wuxing-shiye/SKILL.md` | 五行载体、代表职业、方位、复合行业 |
+| 24 | suiyun-shiye | `suiyun-shiye/SKILL.md` | 大运三策略、流年出手与宜守信号 |
+
+**依赖**：tiaohou-shiye → `shengshuai-panbie` + `xi-ji-quyong`；
+geshi-shiye → `geshi-dingxing`；wuxing-shiye → `wuxing-shengke` + `xi-ji-quyong`；
+suiyun-shiye → `dayun-fenxi` + `xi-ji-quyong`。
+
+**输出契约**：`docs/CAREER_SCHEMA.md`（10 个顶层键，闭合枚举）。
+
+**校验**：`npm test`（结构 + 契约 + 基线完整性）。
