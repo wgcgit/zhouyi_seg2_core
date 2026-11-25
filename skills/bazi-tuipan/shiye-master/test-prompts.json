@@ -1,0 +1,50 @@
+[
+  {
+    "id": "sm-001",
+    "prompt": "测一下这个人的事业方向：男命戊辰年 己未月 乙亥日 乙酉时",
+    "expected_skill": "shiye-master",
+    "should_fire": true,
+    "category": "应触发",
+    "note": "给出完整四柱，触发事业择业总入口"
+  },
+  {
+    "id": "sm-002",
+    "prompt": "这个八字适合做什么行业？戊辰 己未 乙亥 乙酉，男",
+    "expected_skill": "shiye-master",
+    "should_fire": true,
+    "category": "应触发",
+    "note": "问整体赛道与打法"
+  },
+  {
+    "id": "sm-003",
+    "prompt": "命盘出来了，帮我看看事业该往哪个方向走",
+    "expected_skill": "shiye-master",
+    "should_fire": true,
+    "category": "应触发",
+    "note": "通用事业规划请求"
+  },
+  {
+    "id": "sm-004",
+    "prompt": "这个八字适合创业还是上班？戊辰年己未月乙亥日乙酉时",
+    "expected_skill": "shiye-master",
+    "should_fire": true,
+    "category": "应触发",
+    "note": "问打法分档"
+  },
+  {
+    "id": "sm-005",
+    "prompt": "这个八字适合做什么行业",
+    "expected_skill": "shiye-master",
+    "should_fire": false,
+    "category": "诱饵-边界模糊",
+    "note": "没有给出具体八字，无法出完整方案"
+  },
+  {
+    "id": "sm-006",
+    "prompt": "调候用神怎么辨真假？",
+    "expected_skill": "tiaohou-shiye",
+    "should_fire": false,
+    "category": "诱饵-应触发子skill",
+    "note": "问单个知识点，不是完整择业方案"
+  }
+]
