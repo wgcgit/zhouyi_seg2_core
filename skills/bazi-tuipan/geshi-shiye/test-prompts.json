@@ -1,0 +1,50 @@
+[
+  {
+    "id": "gsh-001",
+    "prompt": "正财格和偏财格适合的行业有什么不同？",
+    "expected_skill": "geshi-shiye",
+    "should_fire": true,
+    "category": "应触发",
+    "note": "问两种财格的行业定向"
+  },
+  {
+    "id": "gsh-002",
+    "prompt": "伤官制杀格适合做什么？",
+    "expected_skill": "geshi-shiye",
+    "should_fire": true,
+    "category": "应触发",
+    "note": "问经典配格的行业定向"
+  },
+  {
+    "id": "gsh-003",
+    "prompt": "格局成格和破格怎么区分？破格了还能做这行吗？",
+    "expected_skill": "geshi-shiye",
+    "should_fire": true,
+    "category": "应触发",
+    "note": "问成破与投入强度"
+  },
+  {
+    "id": "gsh-004",
+    "prompt": "枭神夺食是不是就是偏印格？",
+    "expected_skill": "geshi-shiye",
+    "should_fire": true,
+    "category": "应触发",
+    "note": "问偏印格与破格信号"
+  },
+  {
+    "id": "gsh-005",
+    "prompt": "用库成格是什么意思？适合囤地吗？",
+    "expected_skill": "geshi-shiye",
+    "should_fire": true,
+    "category": "应触发",
+    "note": "问墓库做功"
+  },
+  {
+    "id": "gsh-006",
+    "prompt": "我这个格局适合创业吗",
+    "expected_skill": "geshi-shiye",
+    "should_fire": false,
+    "category": "诱饵-边界模糊",
+    "note": "没有给出具体八字，无法定格"
+  }
+]
