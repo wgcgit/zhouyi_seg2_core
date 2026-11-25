@@ -2932,7 +2932,7 @@ suiyun-shiye → `dayun-fenxi` + `xi-ji-quyong`。
 3. 一个好流年落在坏大运里，往往是诱饵
 4. 不要把「引动」等于「稳成」—— 命理只是时机参考，不是保证书
 
-详见 [CAREER_SCHEMA.md](../../../docs/CAREER_SCHEMA.md)
+详见 [CAREER_SCHEMA.md](../../docs/CAREER_SCHEMA.md)
 ````
 
 - [ ] **Step 7: 跑校验 —— 确认基线 36 个文件仍逐字未动**
