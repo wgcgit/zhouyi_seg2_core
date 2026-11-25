@@ -1,0 +1,50 @@
+[
+  {
+    "id": "ssh-001",
+    "prompt": "这步大运适合重仓还是保守？",
+    "expected_skill": "suiyun-shiye",
+    "should_fire": true,
+    "category": "应触发",
+    "note": "问大运三策略"
+  },
+  {
+    "id": "ssh-002",
+    "prompt": "什么样的流年适合出手拿项目？",
+    "expected_skill": "suiyun-shiye",
+    "should_fire": true,
+    "category": "应触发",
+    "note": "问流年出手信号"
+  },
+  {
+    "id": "ssh-003",
+    "prompt": "换运的时候要注意什么？",
+    "expected_skill": "suiyun-shiye",
+    "should_fire": true,
+    "category": "应触发",
+    "note": "问交运过渡期"
+  },
+  {
+    "id": "ssh-004",
+    "prompt": "冲开财库的那一年是不是一定发财？",
+    "expected_skill": "suiyun-shiye",
+    "should_fire": true,
+    "category": "应触发",
+    "note": "问引动不等于稳成"
+  },
+  {
+    "id": "ssh-005",
+    "prompt": "大运和流年哪个更能决定事业方向？",
+    "expected_skill": "suiyun-shiye",
+    "should_fire": true,
+    "category": "应触发",
+    "note": "问三层定位关系"
+  },
+  {
+    "id": "ssh-006",
+    "prompt": "我什么时候开始做比较好",
+    "expected_skill": "suiyun-shiye",
+    "should_fire": false,
+    "category": "诱饵-边界模糊",
+    "note": "没有给出具体八字与出生信息，无法排大运"
+  }
+]
