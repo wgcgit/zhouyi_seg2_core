@@ -2716,6 +2716,22 @@ git commit -m "docs(skills): 补 candidates 四份 —— 原则/框架/案例/�
 - Consumes: Task 2–8 的全部产物
 - Produces: 更新后的 6 个顶层文档
 
+**既有行的授权修改（除追加外，本任务只允许改这 3 行标题）:**
+
+追加新段会让 3 处清单计数标题与实际条目数对不上，必须同步改掉。**逐字替换，只此 3 行：**
+
+| 文件 | 行 | 原标题 | 新标题 |
+|---|---|---|---|
+| `INDEX.md` | 38 | `## Skill 完整清单（17个 + 1个规范 + 1个总入口）` | `## Skill 完整清单（基线 19 个：17 个子 skill + 1 个规范 + 1 个总入口；seg2 新增 5 个见文末）` |
+| `verified.md` | 9 | `## 通过单元（共18个）` | `## 通过单元（基线 18 个；seg2 新增 5 个见文末）` |
+| `PIPELINE_STATE.md` | 29 | `## Skill 完整清单（18个子 skill + 2个顶级 + 1个规范）` | `## Skill 完整清单（基线 19 个：17 个子 skill + 1 个规范 + 1 个总入口；seg2 新增 5 个见文末）` |
+
+数字依据（实测，非估计）：`INDEX.md` 与 `PIPELINE_STATE.md` 的原清单各 19 行
+（`tuipan-master` 总入口 + 「八字完整推盘输出通用规范」规范 + 17 个子 skill），
+其中 `PIPELINE_STATE.md` 的原标题「18个子 skill + 2个顶级 + 1个规范」合计 21，与表实际 19 行
+**对不上**（基线既有错，本次一并改正）。`verified.md` 的原清单 18 行（只计通过单元，不计那条规范），
+原标题「共18个」自洽。追加 5 行后：INDEX 与 PIPELINE_STATE 各 24 项，verified 23 项。
+
 - [ ] **Step 1: 改 `INDEX.md`**
 
 在「Skill 完整清单」表格后追加新表，并把新的调用关系补进去。
@@ -2734,7 +2750,7 @@ git commit -m "docs(skills): 补 candidates 四份 —— 原则/框架/案例/�
         ┌─────────────────────────┐
         │      shiye-master       │ ← 总入口，输出 CAREER_SCHEMA 的 10 键
         └──────────┬──────────────┘
-                   │ 依次调用
+                   │ 并行调用后叠加
     ┌──────────────┼──────────────┬──────────────┐
     ▼              ▼              ▼              ▼
 tiaohou-shiye   geshi-shiye    wuxing-shiye   suiyun-shiye
@@ -2745,6 +2761,8 @@ tiaohou-shiye   geshi-shiye    wuxing-shiye   suiyun-shiye
                     （叠加后出赛道）
 ```
 
+> 四层是**职责分工**，不是执行先后 —— 输出键序见 `docs/CAREER_SCHEMA.md`（`pattern` 在 `tiaoHou` 之前）。
+
 | # | name | 文件路径 | 核心功能 |
 |---|---|---|---|
 | 20 | **shiye-master** | `shiye-master.skill.md` | **事业择业总入口，输出 CAREER_SCHEMA 契约** |
@@ -2752,6 +2770,10 @@ tiaohou-shiye   geshi-shiye    wuxing-shiye   suiyun-shiye
 | 22 | geshi-shiye | `geshi-shiye/SKILL.md` | 十格与七组配格的行业定向、成格破格 |
 | 23 | wuxing-shiye | `wuxing-shiye/SKILL.md` | 五行载体、代表职业、方位、复合行业 |
 | 24 | suiyun-shiye | `suiyun-shiye/SKILL.md` | 大运三策略、流年出手与宜守信号 |
+
+> 编号：本表 20–24，接上表 1–19。`verified.md` 的通过单元表是 19–23
+> （它不计「八字完整推盘输出通用规范」这条规范，故少 1）——
+> **跨文件引用同一 skill 请用 skill 名，不要用编号。**
 
 **依赖**：tiaohou-shiye → `shengshuai-panbie` + `xi-ji-quyong`；
 geshi-shiye → `geshi-dingxing`；wuxing-shiye → `wuxing-shengke` + `xi-ji-quyong`；
@@ -2796,7 +2818,8 @@ suiyun-shiye → `dayun-fenxi` + `xi-ji-quyong`。
 **新增说明**
 - **2026-11-24**：seg2 新增事业择业链 5 个 skill + JSON 契约 + 校验工具链。
 - 本次只做知识库，**未接入 v2 运行时**。接入方式：把 4 个子 skill 的 `Interpretation` 段加进
-  `backend/src/llm/prompt.js` 的 `SKILL_CALL_ORDER`，并新增 `shiye-master` 的契约输出字段。
+  姊妹仓库 `zhouyi_seg1_v2` 的 `backend/src/llm/prompt.js` 的 `SKILL_CALL_ORDER`，
+  并新增 `shiye-master` 的契约输出字段。
 ```
 
 - [ ] **Step 3: 改 `verified.md`**
@@ -2807,6 +2830,10 @@ suiyun-shiye → `dayun-fenxi` + `xi-ji-quyong`。
 ---
 
 ## 阶段 1.5 — seg2 事业择业链验证（2026-11-24）
+
+> 编号：本表 19–23，接上表 1–18。`INDEX.md` 的 Skill 清单是 20–24
+> （它把「八字完整推盘输出通用规范」也计入编号，故多 1）——
+> **跨文件引用同一 skill 请用 skill 名，不要用编号。**
 
 | # | Skill | 验证结果 | 理由 |
 |---|---|---|---|
@@ -2819,7 +2846,7 @@ suiyun-shiye → `dayun-fenxi` + `xi-ji-quyong`。
 ### 独有性说明
 
 `调候`（六大气机、真药/藏药/假药、生机赛道）在 v1/v2 的 19 个基线 skill 中**完全没有覆盖**
-（原始材料 `推盘材料.txt` 中「调候」出现 0 次）。本次新增的 5 个 skill 是对基线的**增量**，不是重复。
+（原始材料 `zhouyi/推盘材料.txt`（v1 项目侧）中「调候」出现 0 次）。本次新增的 5 个 skill 是对基线的**增量**，不是重复。
 
 ### 无淘汰单元
 
@@ -2849,7 +2876,7 @@ suiyun-shiye → `dayun-fenxi` + `xi-ji-quyong`。
 | 交运过渡期 | 换运前后一两年，旧赛道松动、新赛道未稳的扰动期，此时忌重大动作 |
 | 机会流年 | 在好大运里是加速兑现点；在一般大运里只是短暂窗口期 |
 | 坑流年 | 再好大运也会踩坑的年份；不是路坏了，是当年路况差 |
-| 事业择业链 | 调候定药 → 格局定底盘 → 五行定赛道载体 → 岁运定时间表，四层叠加的决策链 |
+| 事业择业链 | 调候定药 → 格局定底盘 → 五行定赛道载体 → 岁运定时间表，四层叠加的决策链（四层是职责分工，不是执行先后；输出键序见 `docs/CAREER_SCHEMA.md`） |
 ```
 
 - [ ] **Step 5: 改 `BOOK_OVERVIEW.md`**
@@ -2879,8 +2906,10 @@ suiyun-shiye → `dayun-fenxi` + `xi-ji-quyong`。
 
 ### 应用方向
 
-用户问「适合做什么行业」「什么时候适合创业」时，`shiye-master` 按
-`调候 → 格局 → 五行 → 岁运` 的顺序推进，输出符合 `docs/CAREER_SCHEMA.md` 的事业方案。
+用户问「适合做什么行业」「什么时候适合创业」时，`shiye-master` 把
+`调候 / 格局 / 五行 / 岁运` 四层**叠加**起来判断（四层是职责分工，不是执行先后 ——
+契约键序以 `docs/CAREER_SCHEMA.md` 为准，`pattern` 在 `tiaoHou` 之前），
+输出符合 `docs/CAREER_SCHEMA.md` 的事业方案。
 ```
 
 - [ ] **Step 6: 改 `DIGEST.md`**
@@ -2897,6 +2926,8 @@ suiyun-shiye → `dayun-fenxi` + `xi-ji-quyong`。
 ```
 调候定药  →  格局定底盘  →  五行定赛道载体  →  岁运定时间表
 ```
+
+> 四层是**职责分工**，不是执行先后 —— 输出键序见 `docs/CAREER_SCHEMA.md`（`pattern` 在 `tiaoHou` 之前）。
 
 ### 调候六气机（主药 / 次药）
 
