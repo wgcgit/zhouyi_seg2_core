@@ -1,0 +1,50 @@
+[
+  {
+    "id": "wsh-001",
+    "prompt": "木属性的八字适合做什么行业？",
+    "expected_skill": "wuxing-shiye",
+    "should_fire": true,
+    "category": "应触发",
+    "note": "问单一五行的代表职业"
+  },
+  {
+    "id": "wsh-002",
+    "prompt": "土命的人适合往哪个方向发展？",
+    "expected_skill": "wuxing-shiye",
+    "should_fire": true,
+    "category": "应触发",
+    "note": "问五行对应的方位"
+  },
+  {
+    "id": "wsh-003",
+    "prompt": "房地产行业分别带哪些五行？",
+    "expected_skill": "wuxing-shiye",
+    "should_fire": true,
+    "category": "应触发",
+    "note": "问复合行业的五行构成"
+  },
+  {
+    "id": "wsh-004",
+    "prompt": "五行缺了是不是就该去补这一行？",
+    "expected_skill": "wuxing-shiye",
+    "should_fire": true,
+    "category": "应触发",
+    "note": "问喜用神与缺的误区"
+  },
+  {
+    "id": "wsh-005",
+    "prompt": "火命的人性格上适合什么工作？",
+    "expected_skill": "wuxing-shiye",
+    "should_fire": true,
+    "category": "应触发",
+    "note": "问性格适配"
+  },
+  {
+    "id": "wsh-006",
+    "prompt": "五行和行业的关系",
+    "expected_skill": "wuxing-shiye",
+    "should_fire": false,
+    "category": "诱饵-边界模糊",
+    "note": "纯概念提问，未落到具体命局，无可执行结论"
+  }
+]
