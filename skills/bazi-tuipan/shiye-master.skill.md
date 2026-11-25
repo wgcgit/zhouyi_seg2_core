@@ -40,6 +40,10 @@ case → monthCommand → pattern → tiaoHou → xiJi → boundaries → playbo
 
 四层的产出互相修正：调候定的药会改变格局的成败判断；格局定的底盘决定五行载体能不能出功；岁运引动哪一层，就在那层上兑现。
 
+**输出键序以 `docs/CAREER_SCHEMA.md` 为准**：`case → monthCommand → pattern → tiaoHou → xiJi → boundaries → playbooks → timeline → transition → summary`，
+其中 `pattern` 在 `tiaoHou` 之前 —— 先定月令与格局底盘，再定气候与药。四层是**职责分工**，不是执行先后。
+
+---
 ### 二、一句话总纲
 
 > 格局管底盘，十神管手法，调候管命局的气温土壤；药被合、被埋、被克，赛道再好也容易卡壳拖耗。
